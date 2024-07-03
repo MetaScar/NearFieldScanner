@@ -1,3 +1,6 @@
+% Functionality needed: 
+% - control how far X comes out
+% - organize data to position and S21 complex measurements for given freq
 % Note: if getting error with instruments.VNA.N5224A, then you need to
 % include the instrument folder for your matlab code
 
@@ -90,7 +93,7 @@ for i = 1:size(Y_pos_str)
 
 end
 
-paramsTable
+saveVariable(organizeData(paramsTable))
 
 
 function X_position = FindXPos(x_center)
@@ -169,7 +172,7 @@ end
 
 function Y_position = FindYPos(y_center)
 y_max = -1.2;
-y_min = -654.2;
+y_min = -619.2;
 
 % Prompt user for desired Y width
 Y = input('How tall (y-axis) do you want the scan (mm): ');
@@ -344,4 +347,54 @@ while isnan(str2double(response))
     response = input("Input is not a number!  Please try again: ", "s");
 end
 a = response;
+end
+
+% take the raw paramTable and convert it into a struct with positon,
+% frequency, and S21 data
+function structy = organizeData(table)
+
+sparams = table.("S parameters");
+freq = sparams(1).Frequencies;
+selectedFreqIndex = ceil(length(freq)/2);
+centerFreq = freq(selectedFreqIndex);
+
+check = true;
+while check
+a = input("What frequency do you want to analyze? (The default is the center at " + centerFreq/1e9 + " GHz): ");
+if ~isempty(a)
+    selectedFreqIndex = find_nearest_index(freq, a*1e9);
+end
+
+a = input("Confirm; will frequency " + freq(selectedFreqIndex)/1e9 + " GHz work? (y/n): ", "s");
+if strcmp(a, "y")
+    check = false;
+end
+
+end
+
+sdata = zeros(length(sparams), 1);
+for i = 1:length(sparams)
+    sparam = rfparam(sparams(i), 1, 1);
+    sdata(i) = sparam(selectedFreqIndex);
+end
+
+structy = struct('x', table.("X position"), 'y', table.("Y position"), 's', sdata, 'frequency', freq(selectedFreqIndex));
+
+end
+
+% input a 1d array (x), and find the index of the element with the closest
+% value to a given value (num)
+function index = find_nearest_index(x, num)
+[~,index] = min(abs(x-num));
+end
+
+% prompt the user for what they want to name a variable that is going to be
+% saved as a file.
+% Critque: should tell the user what kind of variable is being saved. Could
+% be done with a print statement before calling this function.
+function saveVariable(var)
+a = input("What do you want to name the .mat file?: ", "s");
+
+name = a + ".mat";
+save(name, "var")
 end
