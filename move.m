@@ -104,6 +104,9 @@ for i = 1:size(Y_pos_str)
 
 end
 
+disp("Now saving the raw data collection.")
+saveVariable(paramsTable)
+disp("Now saving the organized data collection.")
 saveVariable(organizeData(paramsTable))
 
 % When done with machine, might as well home it for next user
