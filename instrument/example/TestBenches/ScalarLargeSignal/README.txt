@@ -1,0 +1,1 @@
+Type "help main" in MATLAB while in this directory to get instructions for using this bench.
