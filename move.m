@@ -1,3 +1,6 @@
+% Functionality needed: 
+% - control how far X comes out
+% - organize data to position and S21 complex measurements for given freq
 % Note: if getting error with instruments.VNA.N5224A, then you need to
 % include the instrument folder for your matlab code
 
@@ -6,27 +9,33 @@ clc; clear; close all
 % add instrument path manually
 addpath(".\instrument\");
 
+disp("Connecting to Near-Field Scanner")
 % Connect to serial
 x = serialport('COM6', 115200);
 % the serial readline command has a timeout that will stop program before
 % procedures (namely homing) are completed. So extend time as needed
 x.Timeout = 120;
 
+
 % Pause for 5 seconds to allow for connection
 pause(5);
+disp("Connected!")
 % home the machine
 Homing(x);
 
 % for now going to declare center, but future code should have user
 % determine the center
-x_center = -558.8;
+x_center = -563.8;
 X_position = FindXPos(x_center);
 
 % y axis now!
 % for now going to declare center, but future code should have user
 % determine the center
-y_center = -438.2;
+y_center = -246.2;
 Y_position = FindYPos(y_center);
+
+% determine the z position
+ZPosition(x);
 
 % positions have been determined! Convert to string
 Y_pos_str = string(Y_position);
@@ -45,10 +54,13 @@ paramsTable = table('Size', sz,'VariableTypes', varTypes, 'VariableNames',varNam
 pna = instruments.VNA.N5224A("Address", "GPIB0::16::INSTR");
 % Make the VNA screen nice and fancy
 pna.set("View", "Default");
+disp("Connected and Setup VNA");
 
+disp("Starting Raster Scan")
 tablePos = 1;
 odd = true;
 j = 1;
+Progress = 1;
 for i = 1:size(Y_pos_str)
     loop = true;
     while(loop)
@@ -59,6 +71,8 @@ for i = 1:size(Y_pos_str)
         % wait until the motion is complete
         WaitMotionComplete(x);
         disp('Position: X:' + X_pos_str(j) + ' Y: ' + Y_pos_str(i));
+        disp("Progress: " + (Progress/rows) * 100 + "%");
+        Progress = Progress + 1;
         % Grab an S-Parameter Object
         % Note that anything can go in the second parameter of the function
         S = pna.get("S2P", "");
@@ -90,7 +104,10 @@ for i = 1:size(Y_pos_str)
 
 end
 
-paramsTable
+saveVariable(organizeData(paramsTable))
+
+% When done with machine, might as well home it for next user
+Homing(x);
 
 
 function X_position = FindXPos(x_center)
@@ -169,7 +186,7 @@ end
 
 function Y_position = FindYPos(y_center)
 y_max = -1.2;
-y_min = -654.2;
+y_min = -619.2;
 
 % Prompt user for desired Y width
 Y = input('How tall (y-axis) do you want the scan (mm): ');
@@ -188,12 +205,12 @@ while go
     end
     % Check if width is beneath max
     while(y_center + (Y/2) > y_max)
-        Y = input('Sorry! Too wide. Please try again: ');
+        Y = input('Sorry! Too tall. Please try again: ');
         check1 = false;
     end
     % Check if width is above min
     while(y_center - (Y/2) < y_min)
-        Y = input('Sorry! Too wide. Please try again: ');
+        Y = input('Sorry! Too tall. Please try again: ');
         check2 = false;
     end
     % if all checks passed, can procede
@@ -211,7 +228,7 @@ while (deltay < 0)
 end
 % Make sure user is ok with delta X being greater than width
 if (deltay > Y)
-    confirm = input('Delta y is greater than width! Are you ok with this? (y/N): ', 's');
+    confirm = input('Delta y is greater than height! Are you ok with this? (y/N): ', 's');
     if (confirm ~= "y")
         return
     end
@@ -247,7 +264,7 @@ reading = true;
 while reading
     grbl_out = readline(x);
     grbl_response = decode_unicode(strip(grbl_out));
-    disp(grbl_response);
+    % disp(grbl_response); % display the results of the machine
     if isequal(grbl_response, 'ok')
         reading = false;
     end
@@ -256,6 +273,7 @@ end
 end
 
 function Homing(x)
+disp("Homing Machine")
 writeline(x, "$HZ");
 WaitForOk(x);
 writeline(x, "$HX");
@@ -305,15 +323,15 @@ end
 % User input will change the relative position of the machine X position. 
 % Code uses recursion. 
 % Escape condition is an input of 0.
-% 2024-07-03: Untested
+% 2024-07-03: Tested
 function ZPosition(x)
 z_min = -898.8;
 z_max = -446.8;
 
-a = input("This code will move the probe closer or futher away from the AUT. Positive numbers will move it closer, negative further. Enter 0 to stop movement controls.\n" + ...
+a = input("This code will move the probe closer or futher away from the AUT.\nPositive numbers will move it closer, negative further.\nEnter 0 to stop movement controls.\n" + ...
     "Please provide input (mm): ", "s");
 
-inputNumCheck(a);
+a = inputNumCheck(a);
 
 numInput = str2double(a);
 
@@ -321,10 +339,15 @@ if numInput == 0
     return
 end
 
-while (numInput > z_max) || (numInput < z_min)
+currentPos = getPos(x, "Z");
+
+while (currentPos + numInput > z_max) || (currentPos + numInput < z_min)
     a = input("Input goes beyond machine limits! Please try again: ", "s");
-    inputNumCheck(a);
+    a = inputNumCheck(a);
     numInput = str2double(a);
+    if numInput == 0
+        return
+    end
 end
 
 command = "G91 X" + numInput;
@@ -344,4 +367,119 @@ while isnan(str2double(response))
     response = input("Input is not a number!  Please try again: ", "s");
 end
 a = response;
+end
+
+% take the raw paramTable and convert it into a struct with positon,
+% frequency, and S21 data
+function structy = organizeData(table)
+
+sparams = table.("S parameters");
+freq = sparams(1).Frequencies;
+selectedFreqIndex = ceil(length(freq)/2);
+centerFreq = freq(selectedFreqIndex);
+
+check = true;
+while check
+a = input("What frequency do you want to analyze? (The default is the center at " + centerFreq/1e9 + " GHz): ");
+if ~isempty(a)
+    selectedFreqIndex = find_nearest_index(freq, a*1e9);
+end
+
+a = input("Confirm; will frequency " + freq(selectedFreqIndex)/1e9 + " GHz work? (y/n): ", "s");
+if strcmp(a, "y")
+    check = false;
+end
+
+end
+
+sdata = zeros(length(sparams), 1);
+for i = 1:length(sparams)
+    sparam = rfparam(sparams(i), 1, 1);
+    sdata(i) = sparam(selectedFreqIndex);
+end
+
+structy = struct('x', table.("X position"), 'y', table.("Y position"), 's', sdata, 'frequency', freq(selectedFreqIndex));
+
+end
+
+% input a 1d array (x), and find the index of the element with the closest
+% value to a given value (num)
+% 2024-07-03 Locally tested
+function index = find_nearest_index(x, num)
+[~,index] = min(abs(x-num));
+end
+
+% prompt the user for what they want to name a variable that is going to be
+% saved as a file.
+% Critque: should tell the user what kind of variable is being saved. Could
+% be done with a print statement before calling this function.
+% 2024-07-03 Locally tested
+function saveVariable(var)
+a = input("What do you want to name the .mat file?: ", "s");
+
+name = a + ".mat";
+save(name, "var")
+end
+
+% Get position of grbl. Axis input options are "X", "Y", and "Z"
+function pos = getPos(x, axis)
+flush(x);
+% send command to check status
+writeline(x, '?\n');
+% get response
+grbl_out = readline(x);
+grbl_response = char(decode_unicode(strip(grbl_out)));
+
+% make sure its the status rather than an ok
+if strcmp(grbl_response(1), "<") & strcmp(grbl_response(end), ">")
+    start_index = 0;
+    end_index = 0;
+    for i = 1:length(grbl_response)
+        if strcmp(grbl_response(i), "|") & (start_index == 0)
+            start_index = i + 1;
+        elseif strcmp(grbl_response(i), "|") & (start_index ~= 0) & (end_index == 0)
+            end_index = i - 1;
+            break;
+        end
+    end
+    positions = grbl_response(start_index:end_index);
+    % give the position the user asked for
+    start_index = 0;
+    end_index = 0;
+    if strcmp(axis, "X") % note: code X (which is what will be returned) is machine y
+        for i = 1:length(positions)
+            if strcmp(positions(i), ",") & (start_index == 0)
+                start_index = i + 1;
+            elseif strcmp(positions(i), ",") & (start_index ~= 0) & (end_index == 0)
+                end_index = i - 1;
+                break;
+            end
+        end
+        pos = str2double(positions(start_index:end_index));
+    elseif strcmp(axis, "Y") % note: code Y (which is what will be returned) is machine z
+        for i = 1:length(positions)
+            if strcmp(positions(i), ",") & (start_index == 0)
+                start_index = 1;
+            elseif strcmp(positions(i), ",") & (start_index == 1)
+                start_index = i + 1;
+                break;
+            end
+        end
+        pos = str2double(positions(start_index:end));
+    elseif strcmp(axis, "Z") % note: code Z (which is what will be returned) is machine x
+        for i = 1:length(positions)
+            if strcmp(positions(i), ":") & (start_index == 0)
+                start_index = i + 1;
+            elseif strcmp(positions(i), ",") & (start_index ~= 0) & (end_index == 0)
+                end_index = i - 1;
+                break;
+            end
+        end
+        pos = str2double(positions(start_index:end_index));
+    end
+else 
+    print("Error: Command ? didn't return status of machine");
+    quit
+end
+
 end
