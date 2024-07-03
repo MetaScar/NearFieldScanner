@@ -31,6 +31,9 @@ X_position = FindXPos(x_center);
 y_center = -438.2;
 Y_position = FindYPos(y_center);
 
+% determine the z position
+ZPosition(x);
+
 % positions have been determined! Convert to string
 Y_pos_str = string(Y_position);
 X_pos_str = string(X_position);
@@ -384,6 +387,7 @@ end
 
 % input a 1d array (x), and find the index of the element with the closest
 % value to a given value (num)
+% 2024-07-03 Locally tested
 function index = find_nearest_index(x, num)
 [~,index] = min(abs(x-num));
 end
@@ -392,6 +396,7 @@ end
 % saved as a file.
 % Critque: should tell the user what kind of variable is being saved. Could
 % be done with a print statement before calling this function.
+% 2024-07-03 Locally tested
 function saveVariable(var)
 a = input("What do you want to name the .mat file?: ", "s");
 
