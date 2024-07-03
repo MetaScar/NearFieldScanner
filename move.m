@@ -394,7 +394,7 @@ end
 
 sdata = zeros(length(sparams), 1);
 for i = 1:length(sparams)
-    sparam = rfparam(sparams(i), 1, 1);
+    sparam = rfparam(sparams(i), 2, 1);
     sdata(i) = sparam(selectedFreqIndex);
 end
 
