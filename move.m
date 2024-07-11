@@ -25,7 +25,7 @@ Homing(x);
 
 % for now going to declare center, but future code should have user
 % determine the center
-x_center = -563.8;
+x_center = -561.8;
 X_position = FindXPos(x_center);
 
 % y axis now!
