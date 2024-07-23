@@ -1,0 +1,1363 @@
+classdef moveGUI < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                   matlab.ui.Figure
+        GridLayout                 matlab.ui.container.GridLayout
+        StructtoPlotsButton        matlab.ui.control.Button
+        RawtoStructButton          matlab.ui.control.Button
+        RunMeasurementButton       matlab.ui.control.Button
+        GRBLCommandCheckBox        matlab.ui.control.CheckBox
+        FindProbeCenterButton      matlab.ui.control.Button
+        DetermineCriteriaButton    matlab.ui.control.Button
+        DetermineZDistButton       matlab.ui.control.Button
+        StepSizemmEditField        matlab.ui.control.NumericEditField
+        StepSizemmEditFieldLabel   matlab.ui.control.Label
+        ProbeMaintenanceButton     matlab.ui.control.Button
+        StatusTextArea             matlab.ui.control.TextArea
+        StatusTextAreaLabel        matlab.ui.control.Label
+        ResponseTextArea           matlab.ui.control.TextArea
+        ResponseTextAreaLabel      matlab.ui.control.Label
+        GRBLCommandEditField       matlab.ui.control.EditField
+        GRBLCommandEditFieldLabel  matlab.ui.control.Label
+        MovingCheckBox             matlab.ui.control.CheckBox
+        InitializeButton           matlab.ui.control.Button
+        BACKWARDOButton            matlab.ui.control.Button
+        FORWARDXButton             matlab.ui.control.Button
+        RIGHTButton                matlab.ui.control.Button
+        LEFTButton                 matlab.ui.control.Button
+        DOWNVButton                matlab.ui.control.Button
+        UPButton                   matlab.ui.control.Button
+    end
+
+    
+    properties (Access = private)
+        x % The serial connection to grbl arduino
+        minX = -898.8 % minimum code x position (machine y)
+        maxX = -50.8 % maximum code x position (machine y)
+        minY = -619.2 % minimum code y position (machine z)
+        maxY = -1.2 % maximum code y position (machine z)
+        minZ = -898.8 % minimum code z position (machine x)
+        maxZ = -395.8 % maximum code z position (machine x)
+        posX % the current X position the program is going to
+        posY % the current Y position the program is going to
+        posZ % the current Z position the program is going to
+        stepSize % The step size the motor will move
+        clearTimer % A timer to clear the status field after 2 seconds
+        zButtonPushed = false % Bool for whether or not the z distance button has been pressed; default not
+        zStart = nan % The code z (machine x) position of the AUT/probe. Used for determining distance "d" sampling criterion
+        d = nan % Distance between the AUT and the probe
+        deltaX = nan % The change in position 
+        X = nan % The total width of the scan area required to meet the sampling criteria
+        thetaM =nan % The maximum angle (in radians) between the AUT normal and the probe center
+        centerButtonPushed = false % An indicator variable; whether or not the center button has been pressed yet
+        centerX = nan % The absolute position for code x (machine y) for the center of the probe
+        centerY = nan % The absolute position for code y (machine z) for the center of the probe
+        criteria = false % Indicator variable for whether or not the criteria have been sucessfully determined
+        structy = nan % The struct containing the S21 data for near field measurements. x, y, and zDistance data in mm
+    end
+    
+    methods (Access = private)
+        function pos = getPos(app, axis)
+            flush(app.x);
+            % send command to check status
+            writeline(app.x, '?\n');
+            % get response
+            grbl_out = readline(app.x);
+            grbl_response = char(app.decode_unicode(strip(grbl_out)));
+
+            % make sure its the status rather than an ok
+            if strcmp(grbl_response(1), "<") & strcmp(grbl_response(end), ">")
+                start_index = 0;
+                end_index = 0;
+
+                for i = 1:length(grbl_response)
+                    if strcmp(grbl_response(i), "|") & (start_index == 0)
+                        start_index = i + 1;
+                    elseif strcmp(grbl_response(i), "|") & (start_index ~= 0) & (end_index == 0)
+                        end_index = i - 1;
+                        break;
+                    end
+                end
+                positions = grbl_response(start_index:end_index);
+                % give the position the user asked for
+                start_index = 0;
+                end_index = 0;
+                if strcmp(axis, "X") % note: code X (which is what will be returned) is machine y
+                    for i = 1:length(positions)
+                        if strcmp(positions(i), ",") & (start_index == 0)
+                            start_index = i + 1;
+                        elseif strcmp(positions(i), ",") & (start_index ~= 0) & (end_index == 0)
+                            end_index = i - 1;
+                            break;
+                        end
+                    end
+                    pos = str2double(positions(start_index:end_index));
+                elseif strcmp(axis, "Y") % note: code Y (which is what will be returned) is machine z
+                    for i = 1:length(positions)
+                        if strcmp(positions(i), ",") & (start_index == 0)
+                            start_index = 1;
+                        elseif strcmp(positions(i), ",") & (start_index == 1)
+                            start_index = i + 1;
+                            break;
+                        end
+                    end
+                    pos = str2double(positions(start_index:end));
+
+                elseif strcmp(axis, "Z") % note: code Z (which is what will be returned) is machine x
+                    for i = 1:length(positions)
+                        if strcmp(positions(i), ":") & (start_index == 0)
+                            start_index = i + 1;
+                        elseif strcmp(positions(i), ",") & (start_index ~= 0) & (end_index == 0)
+                            end_index = i - 1;
+                            break;
+                        end
+                    end
+                    pos = str2double(positions(start_index:end_index));
+                end
+            else 
+                print("Error: Command ? didn't return status of machine");
+                quit
+            end
+        end
+        
+        function initSerial(app)
+            app.StatusTextArea.Value = "Connecting to GRBL";
+            % Connect to serial
+            app.x = serialport('COM6', 115200);
+            % the serial readline command has a timeout that will stop program before
+            % procedures (namely homing) are completed. So extend time as needed
+            app.x.Timeout = 120;
+            % Pause for 5 seconds to allow for connection
+            pause(5);
+        end
+        
+        function initPos(app)
+            app.posX = app.getPos("X");
+            app.posY = app.getPos("Y");
+            app.posZ = app.getPos("Z");
+        end
+                % function must be disabled until initPos has been run
+        function right(app)
+            if (app.posX + app.stepSize) > app.maxX
+                uialert(app.UIFigure, "Out of bounds!", "Movement Error");
+            else
+                app.posX = app.posX + app.stepSize;
+                command = "G91 Y" + string(app.stepSize);
+                writeline(app.x, command);
+                app.WaitForOk();
+            end
+        end
+
+        function left(app)
+            if (app.posX - app.stepSize) < app.minX
+                uialert(app.UIFigure, "Out of bounds!", "Movement Error");
+            else
+                app.posX = app.posX - app.stepSize;
+                command = "G91 Y-" + string(app.stepSize);
+                writeline(app.x, command);
+                app.WaitForOk();
+            end
+        end
+        
+        function up(app)
+            if (app.posY + app.stepSize) > app.maxY
+                uialert(app.UIFigure, "Out of bounds!", "Movement Error");
+            else
+                app.posY = app.posY + app.stepSize;
+                command = "G91 Z" + string(app.stepSize);
+                writeline(app.x, command);
+                app.WaitForOk();
+            end
+        end
+        
+        function down(app)
+            if (app.posY - app.stepSize) < app.minY
+                uialert(app.UIFigure, "Out of bounds!", "Movement Error");
+            else
+                app.posY = app.posY - app.stepSize;
+                command = "G91 Z-" + string(app.stepSize);
+                writeline(app.x, command);
+                app.WaitForOk();                
+            end
+        end
+        
+        function forward(app)
+            if (app.posZ + app.stepSize) > app.maxZ
+                uialert(app.UIFigure, "Out of bounds!", "Movement Error");
+            else
+                app.posZ = app.posZ + app.stepSize;
+                command = "G91 X" + string(app.stepSize);
+                writeline(app.x, command);
+                app.WaitForOk();              
+            end
+        end
+        
+        function backward(app)
+            if (app.posZ - app.stepSize) < app.minZ
+                uialert(app.UIFigure, "Out of bounds!", "Movement Error");
+            else
+                app.posZ = app.posZ - app.stepSize;
+                command = "G91 X-" + string(app.stepSize);
+                writeline(app.x, command);
+                app.WaitForOk();               
+            end
+        end
+        
+        function WaitForOk(app)
+            reading = true;
+            while reading
+                grbl_out = readline(app.x);
+                grbl_response = app.decode_unicode(strip(grbl_out));
+                % disp(grbl_response); % display the results of the machine
+                if isequal(grbl_response, 'ok')
+                    reading = false;
+                end
+                pause(0.2); % apparently pull at 5 Hz
+            end
+        end
+        
+        function Homing(app)
+            app.StatusTextArea.Value = "Homing";
+            writeline(app.x, "$HZ");
+            app.WaitForOk();
+            writeline(app.x, "$HX");
+            app.WaitForOk();
+            writeline(app.x, "$HY");
+            app.WaitForOk();
+            resp = uiconfirm(app.UIFigure, "Was the homing sucessfully completed?", "Confirm Homing", "Options", ["Yes", "No"], "DefaultOption", 2);
+            switch resp
+                case 'Yes'
+                case 'No'
+                    app.Homing();
+            end
+            app.StatusTextArea.Value = "";
+        end
+        
+        function out = decode_unicode(app, in_unicode)
+            out = string(char(in_unicode));
+        end
+        
+        function readResponse(app)
+            reading = true;
+            while reading
+                grbl_out = readline(app.x);
+                grbl_response = app.decode_unicode(strip(grbl_out));
+                if isequal(grbl_response, 'ok')
+                    break;
+                end
+                app.ResponseTextArea.Value = grbl_response;
+                pause(0.2); % apparantly pull at 5 Hz
+            end
+        end
+        
+        function clearStatusTimer(app)
+            app.StatusTextArea.Value = "";
+        end
+        
+        function returnMeasure(app)
+            app.MovingCheckBox.Enable = true;
+            if app.MovingCheckBox.Value
+                app.FORWARDXButton.Enable = true;
+                app.UPButton.Enable = true;
+                app.BACKWARDOButton.Enable = true;
+                app.LEFTButton.Enable = true;
+                app.DOWNVButton.Enable = true;
+                app.RIGHTButton.Enable = true;
+                app.StepSizemmEditField.Enable = true;
+            end
+
+            app.ProbeMaintenanceButton.Enable = true;
+            app.DetermineZDistButton.Enable = true;
+            app.DetermineCriteriaButton.Enable = true;
+            app.FindProbeCenterButton.Enable = true;
+            app.RunMeasurementButton.Enable = true;
+
+            app.GRBLCommandCheckBox.Enable = true;
+            if app.GRBLCommandCheckBox.Value
+                app.GRBLCommandEditField.Enable = true;
+                app.ResponseTextArea.Enable = true;
+            end
+        end
+        
+        % Code by Samuel Freitas 5/31/2022
+        % https://github.com/Sam-Freitas/python_to_GRBL/blob/main/simple_stream.m
+        function WaitMotionComplete(app)
+            % wait a second
+            pause(1);
+            % used later to escape function
+            idle_counter = 0;
+
+            while 1
+                % clear the buffer for input
+                flush(app.x, "input");
+                % send command to check status
+                writeline(app.x, '?\n');
+                % get response
+                grbl_out = readline(app.x);
+                grbl_response = app.decode_unicode(strip(grbl_out));
+                % check if response isn't 'ok'. If 'Idle' for 10 loops, movement
+                % done
+                if ~isequal(grbl_response,'ok')
+
+                    if contains(grbl_response,'Idle')
+                        idle_counter = idle_counter + 1;
+                    end
+                end
+
+                if idle_counter > 10
+                    break
+                end
+                % in the GRBL documentation it reccomends a 5Hz rate for the '?' command
+                pause(0.2)
+            end
+        end
+        
+        function organizeData(app, table)
+            if ~exist('table','var')
+                [file,path] = uigetfile('*.mat');
+                if ~exist('file', 'var')
+                    return
+                end
+                table = load(fullfile(path,file));
+                table = table.paramsTable;
+            end
+            sparams = table.("S parameters");
+            freq = sparams(1).Frequencies;
+            selectedFreqIndex = ceil(length(freq)/2);
+            centerFreq = freq(selectedFreqIndex);
+
+            check = true;
+            while check
+                a = inputdlg("What frequency do you want to analyze? (The default is the center at " + centerFreq/1e9 + " GHz): ");
+                if ~all(cellfun(@isempty,a)) && isnan(str2double(a))
+                    a = inputdlg("Input must be a number! What frequency do you want to analyze? (The default is the center at " + centerFreq/1e9 + " GHz): ");
+                end
+
+                if ~cellfun(@isempty,a)
+                    selectedFreqIndex = app.find_nearest_index(freq, str2double(a)*1e9);
+                end
+
+                a = uiconfirm(app.UIFigure, "Confirm; will frequency " + freq(selectedFreqIndex)/1e9 + " GHz work?", "Confirm Frequency", "Options", ["Yes", "No"], "DefaultOption", 2);
+                if strcmp(a, "Yes")
+                    check = false;
+                end
+
+            end
+
+            sdata = zeros(length(sparams), 1);
+            for i = 1:length(sparams)
+                sparam = rfparam(sparams(i), 2, 1);
+                sdata(i) = sparam(selectedFreqIndex);
+            end
+
+            portAUT = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the AUT during measurement?", "Port of AUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
+            portProbe = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the Probe during measurement?", "Port of AUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
+
+            if isnan(app.d)
+                    dTemp = inputdlg("It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here. Otherwise, leave empty/cancel.");
+                    if ~isempty(dTemp)
+                        while str2double(dTemp) < 0
+                            dTemp = inputdlg("Input must be positive! It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here. Otherwise, leave empty/cancel.");
+                        end
+                        app.d = str2double(dTemp);
+                    else
+                        app.d = nan;
+                    end
+            end
+
+            app.structy = struct('x', table.("X position"), 'y', table.("Y position"), 's', sdata, 'frequency', freq(selectedFreqIndex), 'zDistance', app.d, 'AUTPort', portAUT, 'ProbePort', portProbe);
+
+            Filename = sprintf('NearFieldStructData_' + string(freq(selectedFreqIndex)/1e9)  + 'GHz_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
+            tempStructy = app.structy;
+            save(Filename, "tempStructy");
+
+            resp = uiconfirm(app.UIFigure, "Struct has been saved into file " + Filename + ". Would you like to present the magnitude and phase data of the struct?", "Present Data", "Options", ["Yes", "No"]);
+            switch resp
+                case 'Yes'
+                    app.PresentStruct();
+                    return
+                case 'No'
+                    return
+            end
+        end
+        
+        % input a 1d array (x), and find the index of the element with the closest
+        % value to a given value (num)
+        % 2024-07-22 Untested
+        function index = find_nearest_index(app, x, num)
+            [~,index] = min(abs(x-num));
+        end
+        
+        function PresentStruct(app)
+            % speed of light
+            c = 299792458;
+            % lambda in mm
+            lambda = (c/app.structy.frequency)*1000;
+            % dimensional data in terms of lambda
+            x_local = app.structy.x / lambda;
+            y = app.structy.y / lambda;
+            % S21 data
+            s = app.structy.s;
+
+            % Calculate magnitude
+            mag = 20*log10(abs(s));
+
+            % Calculate phase
+            phase = angle(s);
+
+            % Determine unique x and y values
+            unique_x = unique(x_local);
+            unique_y = unique(y);
+
+            % Create a grid of NaNs
+            Mag = NaN(length(unique_y), length(unique_x));
+            Phase = NaN(length(unique_y), length(unique_x));
+
+            % Fill the grid with corresponding z values
+            for i = 1:length(mag)
+            % Find indices in unique_x and unique_y
+                [~, idx_x] = ismember(x_local(i), unique_x);
+                [~, idx_y] = ismember(y(i), unique_y);
+    
+                % Assign z value to the correct position in Z
+                Mag(idx_y, idx_x) = mag(i);
+                Phase(idx_y, idx_x) = phase(i);
+            end
+
+            % Plot using pcolor
+            close all
+            figure('Position',[20, 250, 700, 500])
+            % mag_figure = uifigure("Position", [600 300 400 450]);
+            pcolor(unique_x, unique_y, Mag);
+            colorbar;
+            xlabel('x/\lambda');
+            ylabel('y/\lambda');
+            title('S21 Magnitude (dB)');
+            shading('interp');
+            figure('Position', [720, 250, 700, 500])
+            % phase_figure = uifigure("Position", [600 300 400 450]);
+            pcolor(unique_x, unique_y, Phase);
+            colorbar;
+            xlabel('x/\lambda');
+            ylabel('y/\lambda');
+            title('S21 Phase (Radians)');
+            shading('interp');
+        end
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Key press function: UIFigure
+        function UIFigureKeyPress(app, event)
+            %key = event.Key;
+            %switch key
+                %case 'leftarrow'
+                    %app.left()
+                %case 'uparrow'
+                    %app.up()
+                %case 'rightarrow'
+                    %app.right()
+                %case 'downarrow'
+                    %app.down()
+                %case 'x'
+                    %app.forward()
+                %case 'o'
+                    %app.backward()
+                %otherwise
+            %end
+        end
+
+        % Button pushed function: InitializeButton
+        function InitializeButtonPushed(app, event)
+            app.initSerial()
+            app.Homing()
+            app.MovingCheckBox.Enable = true;
+            app.ProbeMaintenanceButton.Enable = true;
+            app.InitializeButton.Enable = false;
+            app.DetermineZDistButton.Enable = true;
+            app.DetermineCriteriaButton.Enable = true;
+            app.FindProbeCenterButton.Enable = true;
+            app.GRBLCommandCheckBox.Enable = true;
+            app.RunMeasurementButton.Enable = true;
+            app.clearTimer = timer("StartDelay", 2, "TimerFcn", @(~,~)app.clearStatusTimer);
+        end
+
+        % Value changed function: MovingCheckBox
+        function MovingCheckBoxValueChanged(app, event)
+            value = app.MovingCheckBox.Value;
+            if value
+                uialert(app.UIFigure, "The movement protection code is far from perfect! If you're not careful, you can and will ram the machine past its limits. Be on standby at the ESTOP.", "WARNING");
+                app.initPos();
+                app.BACKWARDOButton.Enable = true;
+                app.FORWARDXButton.Enable = true;
+                app.LEFTButton.Enable = true;
+                app.RIGHTButton.Enable = true;
+                app.UPButton.Enable = true;
+                app.DOWNVButton.Enable = true;
+                app.stepSize = 5;
+                app.StepSizemmEditField.Enable = true;
+            else
+                app.BACKWARDOButton.Enable = false;
+                app.FORWARDXButton.Enable = false;
+                app.LEFTButton.Enable = false;
+                app.RIGHTButton.Enable = false;
+                app.UPButton.Enable = false;
+                app.DOWNVButton.Enable = false;
+                app.StepSizemmEditField.Enable = false;
+            end
+        end
+
+        % Button pushed function: DOWNVButton
+        function DOWNVButtonPushed(app, event)
+            app.down();
+        end
+
+        % Button pushed function: UPButton
+        function UPButtonPushed(app, event)
+            app.up();
+        end
+
+        % Button pushed function: RIGHTButton
+        function RIGHTButtonPushed(app, event)
+            app.right();
+        end
+
+        % Button pushed function: LEFTButton
+        function LEFTButtonPushed(app, event)
+            app.left();
+        end
+
+        % Button pushed function: FORWARDXButton
+        function FORWARDXButtonPushed(app, event)
+            app.forward();
+        end
+
+        % Button pushed function: BACKWARDOButton
+        function BACKWARDOButtonPushed(app, event)
+            app.backward();
+        end
+
+        % Value changed function: GRBLCommandEditField
+        function GRBLCommandEditFieldValueChanged(app, event)
+            value = app.GRBLCommandEditField.Value;
+            if ~isempty(value)
+                writeline(app.x, value);
+                app.readResponse();
+                app.GRBLCommandEditField.Value = value + " ";
+                % app.GRBLCommandEditField.Value = value;
+            end
+        end
+
+        % Button pushed function: ProbeMaintenanceButton
+        function ProbeMaintenanceButtonPushed(app, event)
+            command = "G90 X-892.8 Y-106.8 Z-477.2";
+            writeline(app.x, command);
+        end
+
+        % Value changed function: StepSizemmEditField
+        function StepSizemmEditFieldValueChanged(app, event)
+            value = app.StepSizemmEditField.Value;
+            if (value > 0)
+                app.stepSize = value;
+                app.StatusTextArea.Value = "Step Size Updated!";
+                start(app.clearTimer);
+            else
+                uialert(app.UIFigure, "Must be a positive number!", "ERROR");
+            end
+        end
+
+        % Button pushed function: DetermineZDistButton
+        function DetermineZDistButtonPushed(app, event)
+            if ~app.zButtonPushed
+                ok = uiconfirm(app.UIFigure, "This will initialize the process of finding the Z distance, which is the distance between the probe and the AUT to meet the sampling criteria. This particular process will find the absolute position of the AUT relative to the probe. Press OK to return to the movement menu, and position the probe as close as possible to the AUT. Once this is complete, press the Determine Z Dist button. Press cancel to stop this process.", "Determine Z Distance");
+                switch ok
+                    case 'OK'
+                        app.zButtonPushed = true;
+                        app.GRBLCommandEditField.Enable = false;
+                        app.ResponseTextArea.Enable = false;
+                        app.ProbeMaintenanceButton.Enable = false;
+                        app.FindProbeCenterButton.Enable = false;
+                        app.DetermineCriteriaButton.Enable = false;
+                        app.GRBLCommandCheckBox.Enable = false;
+                        if ~app.MovingCheckBox.Value
+                            app.MovingCheckBox.Value = true;
+                            app.MovingCheckBoxValueChanged();
+                        end
+
+                        return
+                    case 'Cancel'
+                        return
+                end
+            else
+                linedUp = uiconfirm(app.UIFigure, "Is the machine positioned with the probe in front of and as close to AUT as possible?", "Confirm", "Options", ["Yes","No", "Cancel"], "DefaultOption", 2, "CancelOption", 3);
+                switch linedUp
+                    case 'Yes'
+                        dist = inputdlg("Using a caliper, what is the distance between the probe and the AUT along the Z Axis? (in mm)");
+                        while isnan(str2double(dist)) || str2double(dist) < 0
+                            dist = inputdlg("Input is not a positive number. Using a caliper, what is the distance between the probe and the AUT along the Z Axis? (in mm)");
+                        end
+                        app.zStart = str2double(dist) + app.getPos("Z");
+                        app.zButtonPushed = false;
+                        app.GRBLCommandCheckBox.Enable = true;
+                        if app.GRBLCommandCheckBox.Value
+                            app.GRBLCommandEditField.Enable = true;
+                            app.ResponseTextArea.Enable = true;
+                        end
+                        app.ProbeMaintenanceButton.Enable = true;
+                        app.FindProbeCenterButton.Enable = true;
+                        app.DetermineCriteriaButton.Enable = true;
+                    case 'No'
+                        return
+                    case 'Cancel'
+                        app.zButtonPushed = false;
+                        app.GRBLCommandCheckBox.Enable = true;
+                        if app.GRBLCommandCheckBox.Value
+                            app.GRBLCommandEditField.Enable = true;
+                            app.ResponseTextArea.Enable = true;
+                        end
+                        app.ProbeMaintenanceButton.Enable = true;
+                        app.FindProbeCenterButton.Enable = true;
+                        app.DetermineCriteriaButton.Enable = true;
+                        return
+                end
+                % without this temp var, for whatever reason, it will
+                % prompt the user for the center check before this.
+                temp = uiconfirm(app.UIFigure, "The absolute z position of AUT is " + string(app.zStart) + " mm. This will be saved internally. To use for future measurements, write it down.", "Result", "Options", "Ok");
+                % check to see if the user also wants to center the probe
+                % as well
+            end
+                 if isnan(app.centerX)
+                    resp = uiconfirm(app.UIFigure, "It looks like you have not determined the center yet. The position for determining the z distance is also a good position to find the center. Would you like to find the center?", "Center as Well?", "Options", ["Yes", "No"]);
+                    switch resp
+                        case 'Yes'
+                            app.centerButtonPushed = false;
+                            app.FindProbeCenterButtonPushed();
+                            return
+                        case 'No'
+                            return
+                    end
+                end
+        end
+
+        % Button pushed function: DetermineCriteriaButton
+        function DetermineCriteriaButtonPushed(app, event)
+            app.criteria = false;
+            resp = uiconfirm(app.UIFigure, "This program will determine the sampling criteria. The required input parameters will be requested from the user. If you have not already determined the starting Z position, you will be prompted to begin the process or input a previously found value. " + ...
+                "Other required inputs include the distance of the longest part of the AUT, the target frequency the AUT will be measured at, and the maximum angle between the AUT normal and the probe center. " + ...
+                "If ready to continue, press OK. To escape this process, press Cancel.", "Criteria Description.");
+            switch resp
+                case 'OK'
+                case 'Cancel'
+                    return
+            end
+            if isnan(app.zStart)
+                resp = uiconfirm(app.UIFigure, "Currently, the starting z distance between the probe and AUT is not stored internally. Do you want to begin the process of determining this value, or have you previously determined this value?", "Z Distance Missing", "Options", ["Find Value", "Input Value", "Cancel"]);
+                switch resp
+                    case "Find Value"
+                        app.zButtonPushed = false;
+                        app.DetermineZDistButtonPushed();
+                        return
+                    case "Input Value"
+                        response = inputdlg("Please provide absolute z position (in mm) of the AUT relative to the probe.");
+                        while isnan(str2double(response))
+                            response = inputdlg("Input is not a number! Please provide absolute z position (in mm) of the AUT relative to the probe.");
+                        end
+                        app.zStart = str2double(response);
+                    case "Cancel"
+                        return
+                end
+            end
+            D = inputdlg("What is the distance of the longest part of the AUT (in mm)?");
+            while isnan(str2double(D))
+                D = inputdlg("Input is not a positive number! What is the distance of the longest part of the AUT (in mm)?");
+            end
+            f = inputdlg("What is the target frequency the AUT will be measured at (in GHz)?");
+            while isnan(str2double(f)) || ~(str2double(f) > 0)
+                f = inputdlg("Input is not a positive number! What is the target frequency the AUT will be measured at (in GHz)?");
+            end
+            f_num = str2double(f) * 1e9;
+            % lambda in mm
+            lambda = (299792458/f_num) * 1000;
+            app.d = (2*str2double(D)^2)/lambda;
+            if app.d > (app.zStart - app.minZ)
+                uialert(app.UIFigure, "Error! The machine is not able to move backward enough to meet the minimum criteria.", "ERROR");
+                return
+            end
+            theta = inputdlg("What is the maximum angle between the AUT normal and the probe center (in degrees)?");
+            while isnan(str2double(theta)) || ~(str2double(theta) > 0)
+                theta = inputdlg("Input is not a positive number! Please enter the maximum angle between the AUT normal and the probe center (in degrees).");
+            end
+            % convert theta into radians
+            app.thetaM = str2double(theta) * (pi/180);
+            app.deltaX = lambda/(2* sin(app.thetaM));
+            if (app.deltaX < 1)
+                uialert(app.UIFigure, "Error! The machine is not precise enough to handle the small step size required for this configuration.", "ERROR");
+                returnF
+            end
+            app.X = 2*app.d*sin(app.thetaM);
+            if (app.X > (app.maxX - app.minX)) || (app.X > (app.maxY - app.minY))
+                uialert(app.UIFigure, "Error! The machine does not have the movement capabilities to meet the criteria! The required length is too long.", "ERROR");
+                return
+            end
+            % once probe centering capability is added, do check here.
+            % Maybe tell user "move probe up to meet criteria"
+            if ~isnan(app.centerX)
+                if (app.maxX < (app.centerX + app.X/2))
+                    uialert(app.UIFigure, "Error! The AUT is too far to the machine positive Y side for given conditions! Move AUT right (facing towards machine -x axis) at least " + string(((app.centerX + app.X/2)) - app.maxX) + " mm to meet criteria!", "ERROR");
+                    return
+                end
+                if (app.minX > (app.centerX - app.X/2))
+                    uialert(app.UIFigure, "Error! The AUT is too far to the machine negative Y side for given conditions! Move AUT left (facing towards machine -x axis) at least " + string(app.minX - (app.centerX - app.X/2)) + " mm to meet criteria!", "ERROR");
+                end
+                if (app.maxY < (app.centerY + app.X/2))
+                    uialert(app.UIFigure, "Error! The AUT is too high for given conditions! Move AUT down at least " + string(((app.centerY + app.X/2)) - app.maxY) + " mm to meet criteria!", "ERROR");
+                    return
+                end
+                if (app.minY > (app.centerY - app.X/2))
+                    uialert(app.UIFigure, "Error! The AUT is too low for given conditions! Move AUT up at least " + string(app.minY - (app.centerY - app.X/2)) + " mm to meet criteria!", "ERROR");
+                end
+            end
+            uialert(app.UIFigure, "The values have been determined! The distance between the probe and AUT (d) needs to be at least " + string(app.d) + " mm. " + ...
+                "Given this distance, the width of the scan area (X) needs to be " + string(app.X) + " mm, " + ...
+                "and the distance between individual points (delta x) is " + string(app.deltaX) + " mm. " + ...
+                "These values will be saved locally. Write them down for future use.", "Results", "Icon", "success");
+            app.criteria = true;
+        end
+
+        % Button pushed function: FindProbeCenterButton
+        function FindProbeCenterButtonPushed(app, event)
+            if ~app.centerButtonPushed
+                resp = uiconfirm(app.UIFigure, "This is the centering program. " + ...
+                    "After you close this prompt, you should move the machine such that the probe is lined up with the center of the AUT. " + ...
+                    "After the AUT and probe have been centered, press the Find Probe Center button." + ...
+                    "Press Cancel to abort this process." + newline + "Note: It can be helpful to move the probe closer to the AUT.", "Centering Program");
+                switch resp
+                    case 'OK'
+                        app.centerButtonPushed = true;
+                        app.GRBLCommandEditField.Enable = false;
+                        app.ResponseTextArea.Enable = false;
+                        app.ProbeMaintenanceButton.Enable = false;
+                        app.DetermineZDistButton.Enable = false;
+                        app.DetermineCriteriaButton.Enable = false;
+                        app.GRBLCommandCheckBox.Enable = false;
+
+                        if ~app.MovingCheckBox.Value
+                            app.MovingCheckBox.Value = true;
+                            app.MovingCheckBoxValueChanged();
+                        end
+                        return
+                    case 'Cancel'
+                        return
+                end
+            else
+                resp = uiconfirm(app.UIFigure, "Is the probe centered with the AUT?", "Confirmation", "Options", ["Yes", "No", "Cancel"], "DefaultOption", 2);
+                switch resp
+                    case 'Yes'
+                        app.centerX = app.getPos("X");
+                        app.centerY = app.getPos("Y");
+                        % without this temp var, for whatever reason, it will
+                        % prompt the user for the z position check before this.
+                        temp = uiconfirm(app.UIFigure, "The center has been found! Absolute positions are " + newline + ...
+                            "X: " + string(app.centerX) + newline + ...
+                            "Y: " + string(app.centerY) + newline + ...
+                            "These values of have been saved locally. Write them down for future use.", "Results", "Options", "OK");
+                        app.centerButtonPushed = false;
+                        if app.GRBLCommandCheckBox.Value
+                            app.GRBLCommandEditField.Enable = true;
+                            app.ResponseTextArea.Enable = true;
+                        end
+                        app.GRBLCommandCheckBox.Enable = true;
+                        app.ProbeMaintenanceButton.Enable = true;
+                        app.DetermineZDistButton.Enable = true;
+                        app.DetermineCriteriaButton.Enable = true;
+                        if isnan(app.zStart)
+                            resp = uiconfirm(app.UIFigure, "It looks like you have not determined the z distance yet. The position for determining the z distance is also a good position to find the center. Would you like to find the z distance?", "Z Distance as Well?", "Options", ["Yes", "No"]);
+                            switch resp
+                                case 'Yes'
+                                    app.zButtonPushed = false;
+                                    app.DetermineZDistButtonPushed();
+                                    return
+                                case 'No'
+                                    return
+                            end
+                        end
+                    case 'No'
+                        return
+                    case 'Cancel'
+                        app.centerButtonPushed = false;
+                        app.ProbeMaintenanceButton.Enable = true;
+                        app.DetermineZDistButton.Enable = true;
+                        app.DetermineCriteriaButton.Enable = true;
+                        app.GRBLCommandCheckBox.Enable = true;
+                        if app.GRBLCommandCheckBox.Value
+                            app.GRBLCommandEditField.Enable = true;
+                            app.ResponseTextArea.Enable = true;
+                        end
+                        return
+                end
+            end
+        end
+
+        % Value changed function: GRBLCommandCheckBox
+        function GRBLCommandCheckBoxValueChanged(app, event)
+            value = app.GRBLCommandCheckBox.Value;
+            if value
+                uialert(app.UIFigure, "Be careful when using GRBL commands! It is recommended to familiarize yourself with GRBL commands before using this feature.", "WARNING");
+                app.GRBLCommandEditField.Enable = true;
+                app.ResponseTextArea.Enable = true;
+            else
+                app.GRBLCommandEditField.Enable = false;
+                app.ResponseTextArea.Enable = false;
+            end
+        end
+
+        % Button pushed function: RunMeasurementButton
+        function RunMeasurementButtonPushed(app, event)
+            resp = uiconfirm(app.UIFigure, "Welcome to the measurement program! The user will provide the absolute position of the Z axis for the correct distance between the AUT and the probe, " + ...
+                "the x and y positions of the center of the AUT relative to the probe, " + ...
+                "the total width of the scan area, " + ...
+                "and the maximum change between each scan point." + ...
+                "For each of the inputs, the user will be prompt to use the App's programs to determine these values (if the program has not already determined them)." + ...
+                "Ready to continue?", "Measurement Program", "Options", ["Continue", "Cancel"]);
+            if strcmp(resp, 'Cancel')
+                return
+            end
+            % check if zStart has been determined
+            if isnan(app.zStart)
+                resp = uiconfirm(app.UIFigure, "It looks like the Z Position of the AUT relative to the probe has not been determined. Run Determine Z Dist program, or provide previously determined value?", "Find AUT Z Position", "Options", ["Run Program", "Input Value", "Cancel"]);
+                switch resp
+                    case 'Run Program'
+                        app.zButtonPushed = false;
+                        app.DetermineZDistButtonPushed();
+                        return
+                    case 'Input Value'
+                        value = inputdlg("What is the absolute Z Position of the AUT relative to the probe (in mm)?", "Input Absolute Z Position of AUT");
+                        while isnan(str2double(value))
+                            value = inputdlg("Input must be a number! What is the absolute Z Position of the AUT relative to the probe (in mm)?","Error; Must be Number");
+                        end
+                        app.zStart = str2double(value);
+                    case 'Cancel'
+                        return
+                end
+            end
+            % check if probe center has been determined
+            if isnan(app.centerX)
+                resp = uiconfirm(app.UIFigure, "It looks like the center positions have not been determined yet. Run Find Probe Center program, or provide previously determined value?", "Find Probe Center Position", "Options", ["Run Program", "Input Value", "Cancel"]);
+                switch resp
+                    case 'Run Program'
+                        app.centerButtonPushed = false;
+                        app.FindProbeCenterButtonPushed();
+                        return;
+                    case 'Input Value'
+                        value = inputdlg("What is the Absolute X position of the probe's center?");
+                        while isnan(str2double(value))
+                            value = inputdlg("Input must be a number! What is the Absolute X position of the probe's center?");
+                        end
+                        app.centerX = str2double(value);
+                        value = inputdlg("What is the Absolute Y position of the probe's center?");
+                        while isnan(str2double(value))
+                            value = inputdlg("Input must be a number! What is the Absolute Y position of the probe's center?");
+                        end
+                        app.centerY = str2double(value);
+                    case 'Cancel'
+                        return
+                end
+            end
+            % check if criteria have been determined
+            if ~app.criteria
+                resp = uiconfirm(app.UIFigure, "It looks like the sampling criteria have not been determined. Run Determine Criteria program, or input values?", "Criteria Values", "Options", ["Run Program", "Input Values", "Cancel"]);
+                switch resp
+                    case 'Run Program'
+                        app.DetermineCriteriaButtonPushed();
+                        % though the program would likely run fine without
+                        % this return here, for the sake of consistency,
+                        % return is added here
+                        return
+                    case 'Input Values'
+                        % input d
+                        value = inputdlg("Input the distance between the probe and AUT in the Z Axis (d) (in mm).");
+                        checks = true;
+                        while checks
+                            check1 = true;
+                            check2 = true;
+                            while isnan(str2double(value)) || ~(str2double(value) > 0)
+                                value = inputdlg("Input must be a positive number! Input the distance between the probe and AUT in the Z Axis (d) (in mm).");
+                                check1 = false;
+                            end
+                            % distance between AUT and minimum Z must be
+                            % less than available moving space
+                            if str2double(value) > (app.zStart - app.minZ)
+                                value = inputdlg("Value of d is larger than machine can physcially move! Please try again.");
+                                check2 = false;
+                            end
+                            
+                            if(check1 & check2)
+                                checks = false;
+                            end
+                        end
+                        app.d = str2double(value);
+                        % input X
+                        value = inputdlg("Input the total width of the scan area (X) (in mm).");
+                        checks = true;
+                        while checks
+                            check1 = true;
+                            check2 = true;
+                            while isnan(str2double(value)) || ~(str2double(value) > 0)
+                                value = inputdlg("Input must be a positive number! Input the total width of the scan area (X) (in mm).");
+                                check1 = false;
+                            end
+                            % X must be less than max area of X and Y
+                            if (str2double(value) > (app.maxY - app.minY)) || (str2double(value) > (app.maxX - app.minX))
+                                value = inputdlg("Value of X is larger than machine can physcially move! Please try again.");
+                                check2 = false;
+                            end
+                            % check to see, based on the center, if within
+                            % the required area
+                            if check2 && (app.maxX < (app.centerX + str2double(value)/2))
+                                uialert(app.UIFigure, "Error! The AUT is too far to the machine positive Y side for given conditions! Move AUT right (facing towards machine -x axis) at least " + string(((app.centerX + str2double(value)/2)) - app.maxX) + " mm to meet criteria!", "ERROR");
+                                return
+                            end
+                            if check2 && (app.minX > (app.centerX - str2double(value)/2))
+                                uialert(app.UIFigure, "Error! The AUT is too far to the machine negative Y side for given conditions! Move AUT left (facing towards machine -x axis) at least " + string(app.minX - (app.centerX - str2double(value)/2)) + " mm to meet criteria!", "ERROR");
+                            end
+                            if check2 && (app.maxY < (app.centerY + str2double(value)/2))
+                                uialert(app.UIFigure, "Error! The AUT is too high for given conditions! Move AUT down at least " + string(((app.centerY + str2double(value)/2)) - app.maxY) + " mm to meet criteria!", "ERROR");
+                                return
+                            end
+                            if check2 && (app.minY > (app.centerY - str2double(value)/2))
+                                uialert(app.UIFigure, "Error! The AUT is too low for given conditions! Move AUT up at least " + string(app.minY - (app.centerY - str2double(value)/2)) + " mm to meet criteria!", "ERROR");
+                            end
+                            
+                            if(check1 & check2)
+                                checks = false;
+                            end
+                        end
+                        app.X = str2double(value);
+                        % input delta X
+                        value = inputdlg("Input the maximum distance between points (delta x) (in mm).");
+                        checks = true;
+                        while checks
+                            check1 = true;
+                            check2 = true;
+                            while isnan(str2double(value)) || ~(str2double(value) > 0)
+                                value = inputdlg("Input must be a positive number! Input the maximum distance between points (delta x) (in mm).");
+                                check1 = false;
+                            end
+                            % X must be less than max area of X and Y
+                            if str2double(value) < 1
+                                value = inputdlg("The delta x is to precise for the machine! Please try again.");
+                                check2 = false;
+                            end
+                            
+                            if(check1 & check2)
+                                checks = false;
+                            end
+                        end
+                        app.deltaX = str2double(value);
+
+                    case 'Cancel'
+                        return
+                end
+            end
+            app.criteria = true;
+            % all necessary variables collected! Disable other buttons
+            app.FORWARDXButton.Enable = false;
+            app.UPButton.Enable = false;
+            app.BACKWARDOButton.Enable = false;
+            app.MovingCheckBox.Enable = false;
+            app.LEFTButton.Enable = false;
+            app.DOWNVButton.Enable = false;
+            app.RIGHTButton.Enable = false;
+            app.StepSizemmEditField.Enable = false;
+            app.ProbeMaintenanceButton.Enable = false;
+            app.DetermineZDistButton.Enable = false;
+            app.DetermineCriteriaButton.Enable = false;
+            app.FindProbeCenterButton.Enable = false;
+            app.RunMeasurementButton.Enable = false;
+            app.GRBLCommandCheckBox.Enable = false;
+            app.GRBLCommandEditField.Enable = false;
+            app.ResponseTextArea.Enable = false;
+            % Verify z position
+            zoffset = uiconfirm(app.UIFigure, "Moving Machine to Z Position Offset! Be on standby at the EStop if something goes wrong.", "Be on Standby", "Icon", "warning");
+            if strcmp(zoffset, "Cancel")
+                return
+            end
+            app.StatusTextArea.Value = "Moving Z";
+            command = "G90 X" + string(app.zStart - app.d) + " Y" + string(app.centerX) + " Z" + string(app.centerY);
+            writeline(app.x, command);
+            app.StatusTextArea.Value = "";
+            confirm = uiconfirm(app.UIFigure, "Does the probe appear to be about " + string(app.d) + " mm from the AUT?", "Confirm", "Options", ["Yes", "No"], 'DefaultOption', 2);
+            if strcmp(confirm, 'No')
+                app.criteria = false;
+                app.returnMeasure();
+                return
+            end
+            % find number of points
+            npoints = ceil(app.X / app.deltaX) + 1;
+            % update deltaX based on the discretized position points
+            app.deltaX = app.X / (npoints - 1);
+            % create and fill in position arrays
+            X_pos = nan(npoints, 1);
+            Y_pos = nan(npoints, 1);
+            for i = 1:npoints
+                X_pos(i) = (app.centerX - (app.X/2)) + ((i - 1) * app.deltaX);
+                Y_pos(i) = (app.centerY - (app.X/2)) + ((i - 1) * app.deltaX);
+            end
+
+            % positions have been determined! Convert to string
+            Y_pos_str = string(Y_pos);
+            X_pos_str = string(X_pos);
+            % Create table for putting data
+            sizeY = size(Y_pos);
+            sizeX = size(X_pos);
+            rows = sizeX(1) * sizeY(1);
+            sz = [rows, 3];
+            varTypes = ["double", "double", "sparameters"];
+            varNames = ["X position", "Y position", "S parameters"];
+            paramsTable = table('Size', sz,'VariableTypes', varTypes, 'VariableNames',varNames);
+            
+            app.StatusTextArea.Value = "Connecting to VNA";
+            % add instrument path manually
+            addpath(".\instrument\");
+            % Setup pna object
+            pna = instruments.VNA.N5224A("Address", "GPIB0::16::INSTR");
+            % Make the VNA screen nice and fancy
+            pna.set("View", "Default");
+
+            tablePos = 1;
+            odd = true;
+            j = 1;
+            for i = 1:size(Y_pos_str)
+                loop = true;
+                while(loop)
+                    % prep command
+                    command = "G90 Y" + X_pos_str(j) + " Z" + Y_pos_str(i);
+                    % send command
+                    writeline(app.x, command);
+                    % wait until the motion is complete
+                    app.WaitMotionComplete();
+                    app.StatusTextArea.Value = "Progress: " + (tablePos/rows) * 100 + "%";
+                    % Grab an S-Parameter Object
+                    % Note that anything can go in the second parameter of the function
+                    S = pna.get("S2P", "");
+                    paramsTable(tablePos, :) = {X_pos(j)-app.centerX, Y_pos(i)-app.centerY, S};
+                    tablePos = tablePos + 1;
+                    % if going the odd route,
+                    if odd
+                        % if j has reached the end, then escape the loop and set j such
+                        % that it will be 1
+                        if(isequal(j,size(X_pos_str,1)))
+                            loop = false;
+                            j = size(X_pos_str,1) - 1;
+                            odd = false;
+                        end
+                        % add 1 to j
+                        j = j + 1;
+                        % if it's even
+                    elseif ~odd
+                        % check if loop is done
+                        if(isequal(j, 1))
+                            loop = false;
+                            j = 2;
+                            odd = true;
+                        end
+                        % subtract 1 from j
+                        j = j - 1;
+                    end
+                end
+
+            end
+            Filename = sprintf('NearFieldRawData_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
+            save(Filename, "paramsTable");
+            resp = uiconfirm(app.UIFigure, "Scanning Complete! Raw data file has been automatically saved as " + Filename +". Do you want to organize the raw data into the standard struct? The user will provide a desired frequency and create a struct with the S21 data, position for each S21 measurement, and a constant for the distance and frequency sampled from the raw data.", "Organize Data?", "Options", ["Yes", "No"]);
+            switch resp
+                case 'Yes'
+                    app.organizeData(paramsTable);
+                    app.returnMeasure()
+                    return
+                case 'No'
+                    app.returnMeasure()
+                    return
+            end
+            
+        end
+
+        % Button pushed function: RawtoStructButton
+        function RawtoStructButtonPushed(app, event)
+            %paramsTable = load("NearFieldRawData_2024-07-23_10-40.mat");
+            %app.organizeData(paramsTable.paramsTable);
+            resp = uiconfirm(app.UIFigure, "This program will prompt the user to open a .mat file of the raw data output from a Near Field Scan (likely named 'NearFieldRawData...mat'), and convert it into a struct of S21 data at a given frequency. Continue?", "Raw to Struct Description", "Options", ["Yes", "No"]);
+            switch resp
+                case 'Yes'
+                    app.organizeData();
+                case 'No'
+                    return
+            end
+        end
+
+        % Button pushed function: StructtoPlotsButton
+        function StructtoPlotsButtonPushed(app, event)
+            resp = uiconfirm(app.UIFigure, "This program will prompt the user to open a .mat file of the organized struct (likely named 'NearFieldStructData...mat'), and plot the magnitude and phase. Continue?", "Plot Struct Data", 'Options', ["Yes", "No"]);
+            switch resp
+                case 'Yes'
+                    try
+                    [file,path] = uigetfile('*.mat');
+                    if ~exist('file', 'var')
+                        return
+                    end
+                    app.structy = load(fullfile(path,file));
+                    app.structy = app.structy.tempStructy;
+                    app.PresentStruct();
+                    catch
+                        uialert(app.UIFigure, "Error! File failed to open. This could be due to the incorrect file being opened (not a raw Near Field data file) or Matlab doesn't have the necessary permissions to read the file.", "File Open Error");
+                    end
+                case 'No'
+                    return
+            end
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 640 480];
+            app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.KeyPressFcn = createCallbackFcn(app, @UIFigureKeyPress, true);
+
+            % Create GridLayout
+            app.GridLayout = uigridlayout(app.UIFigure);
+            app.GridLayout.ColumnWidth = {'1x', '1x', '1x', '1x', '1x'};
+            app.GridLayout.RowHeight = {'1x', '1x', '1x', '1x', '1x', '1x', '1x', '1x'};
+
+            % Create UPButton
+            app.UPButton = uibutton(app.GridLayout, 'push');
+            app.UPButton.ButtonPushedFcn = createCallbackFcn(app, @UPButtonPushed, true);
+            app.UPButton.Enable = 'off';
+            app.UPButton.Layout.Row = 1;
+            app.UPButton.Layout.Column = 2;
+            app.UPButton.Text = 'UP ^';
+
+            % Create DOWNVButton
+            app.DOWNVButton = uibutton(app.GridLayout, 'push');
+            app.DOWNVButton.ButtonPushedFcn = createCallbackFcn(app, @DOWNVButtonPushed, true);
+            app.DOWNVButton.Enable = 'off';
+            app.DOWNVButton.Layout.Row = 2;
+            app.DOWNVButton.Layout.Column = 2;
+            app.DOWNVButton.Text = 'DOWN V';
+
+            % Create LEFTButton
+            app.LEFTButton = uibutton(app.GridLayout, 'push');
+            app.LEFTButton.ButtonPushedFcn = createCallbackFcn(app, @LEFTButtonPushed, true);
+            app.LEFTButton.Enable = 'off';
+            app.LEFTButton.Layout.Row = 2;
+            app.LEFTButton.Layout.Column = 1;
+            app.LEFTButton.Text = '< LEFT';
+
+            % Create RIGHTButton
+            app.RIGHTButton = uibutton(app.GridLayout, 'push');
+            app.RIGHTButton.ButtonPushedFcn = createCallbackFcn(app, @RIGHTButtonPushed, true);
+            app.RIGHTButton.Enable = 'off';
+            app.RIGHTButton.Layout.Row = 2;
+            app.RIGHTButton.Layout.Column = 3;
+            app.RIGHTButton.Text = 'RIGHT >';
+
+            % Create FORWARDXButton
+            app.FORWARDXButton = uibutton(app.GridLayout, 'push');
+            app.FORWARDXButton.ButtonPushedFcn = createCallbackFcn(app, @FORWARDXButtonPushed, true);
+            app.FORWARDXButton.Enable = 'off';
+            app.FORWARDXButton.Layout.Row = 1;
+            app.FORWARDXButton.Layout.Column = 1;
+            app.FORWARDXButton.Text = 'FORWARD X';
+
+            % Create BACKWARDOButton
+            app.BACKWARDOButton = uibutton(app.GridLayout, 'push');
+            app.BACKWARDOButton.ButtonPushedFcn = createCallbackFcn(app, @BACKWARDOButtonPushed, true);
+            app.BACKWARDOButton.Enable = 'off';
+            app.BACKWARDOButton.Layout.Row = 1;
+            app.BACKWARDOButton.Layout.Column = 3;
+            app.BACKWARDOButton.Text = 'BACKWARD O';
+
+            % Create InitializeButton
+            app.InitializeButton = uibutton(app.GridLayout, 'push');
+            app.InitializeButton.ButtonPushedFcn = createCallbackFcn(app, @InitializeButtonPushed, true);
+            app.InitializeButton.Tooltip = {'Initalize the machine by connecting to serial, homing the machine, and enabling movement buttons'};
+            app.InitializeButton.Layout.Row = 1;
+            app.InitializeButton.Layout.Column = 5;
+            app.InitializeButton.Text = 'Initialize';
+
+            % Create MovingCheckBox
+            app.MovingCheckBox = uicheckbox(app.GridLayout);
+            app.MovingCheckBox.ValueChangedFcn = createCallbackFcn(app, @MovingCheckBoxValueChanged, true);
+            app.MovingCheckBox.Enable = 'off';
+            app.MovingCheckBox.Text = 'Moving?';
+            app.MovingCheckBox.Layout.Row = 1;
+            app.MovingCheckBox.Layout.Column = 4;
+
+            % Create GRBLCommandEditFieldLabel
+            app.GRBLCommandEditFieldLabel = uilabel(app.GridLayout);
+            app.GRBLCommandEditFieldLabel.HorizontalAlignment = 'center';
+            app.GRBLCommandEditFieldLabel.Enable = 'off';
+            app.GRBLCommandEditFieldLabel.Layout.Row = 7;
+            app.GRBLCommandEditFieldLabel.Layout.Column = 1;
+            app.GRBLCommandEditFieldLabel.Text = 'GRBL Command';
+
+            % Create GRBLCommandEditField
+            app.GRBLCommandEditField = uieditfield(app.GridLayout, 'text');
+            app.GRBLCommandEditField.ValueChangedFcn = createCallbackFcn(app, @GRBLCommandEditFieldValueChanged, true);
+            app.GRBLCommandEditField.HorizontalAlignment = 'center';
+            app.GRBLCommandEditField.Enable = 'off';
+            app.GRBLCommandEditField.Layout.Row = 7;
+            app.GRBLCommandEditField.Layout.Column = [2 3];
+
+            % Create ResponseTextAreaLabel
+            app.ResponseTextAreaLabel = uilabel(app.GridLayout);
+            app.ResponseTextAreaLabel.HorizontalAlignment = 'center';
+            app.ResponseTextAreaLabel.Enable = 'off';
+            app.ResponseTextAreaLabel.Layout.Row = 8;
+            app.ResponseTextAreaLabel.Layout.Column = 1;
+            app.ResponseTextAreaLabel.Text = 'Response';
+
+            % Create ResponseTextArea
+            app.ResponseTextArea = uitextarea(app.GridLayout);
+            app.ResponseTextArea.Editable = 'off';
+            app.ResponseTextArea.Enable = 'off';
+            app.ResponseTextArea.Tooltip = {'Serial response from GRBL (does not show "ok" message)'};
+            app.ResponseTextArea.Layout.Row = 8;
+            app.ResponseTextArea.Layout.Column = [2 3];
+
+            % Create StatusTextAreaLabel
+            app.StatusTextAreaLabel = uilabel(app.GridLayout);
+            app.StatusTextAreaLabel.HorizontalAlignment = 'center';
+            app.StatusTextAreaLabel.Layout.Row = 3;
+            app.StatusTextAreaLabel.Layout.Column = 4;
+            app.StatusTextAreaLabel.Text = 'Status';
+
+            % Create StatusTextArea
+            app.StatusTextArea = uitextarea(app.GridLayout);
+            app.StatusTextArea.Editable = 'off';
+            app.StatusTextArea.HorizontalAlignment = 'center';
+            app.StatusTextArea.Tooltip = {'Display the current status of the machine'};
+            app.StatusTextArea.Layout.Row = 3;
+            app.StatusTextArea.Layout.Column = 5;
+
+            % Create ProbeMaintenanceButton
+            app.ProbeMaintenanceButton = uibutton(app.GridLayout, 'push');
+            app.ProbeMaintenanceButton.ButtonPushedFcn = createCallbackFcn(app, @ProbeMaintenanceButtonPushed, true);
+            app.ProbeMaintenanceButton.Enable = 'off';
+            app.ProbeMaintenanceButton.Tooltip = {'Move machine to position where it''s easier to access the probe'};
+            app.ProbeMaintenanceButton.Layout.Row = 3;
+            app.ProbeMaintenanceButton.Layout.Column = 1;
+            app.ProbeMaintenanceButton.Text = 'Probe Maintenance';
+
+            % Create StepSizemmEditFieldLabel
+            app.StepSizemmEditFieldLabel = uilabel(app.GridLayout);
+            app.StepSizemmEditFieldLabel.HorizontalAlignment = 'center';
+            app.StepSizemmEditFieldLabel.Enable = 'off';
+            app.StepSizemmEditFieldLabel.Layout.Row = 2;
+            app.StepSizemmEditFieldLabel.Layout.Column = 4;
+            app.StepSizemmEditFieldLabel.Text = 'Step Size (mm)';
+
+            % Create StepSizemmEditField
+            app.StepSizemmEditField = uieditfield(app.GridLayout, 'numeric');
+            app.StepSizemmEditField.ValueChangedFcn = createCallbackFcn(app, @StepSizemmEditFieldValueChanged, true);
+            app.StepSizemmEditField.HorizontalAlignment = 'center';
+            app.StepSizemmEditField.Enable = 'off';
+            app.StepSizemmEditField.Tooltip = {'Edit the step size in mm of the movement controls'};
+            app.StepSizemmEditField.Layout.Row = 2;
+            app.StepSizemmEditField.Layout.Column = 5;
+            app.StepSizemmEditField.Value = 5;
+
+            % Create DetermineZDistButton
+            app.DetermineZDistButton = uibutton(app.GridLayout, 'push');
+            app.DetermineZDistButton.ButtonPushedFcn = createCallbackFcn(app, @DetermineZDistButtonPushed, true);
+            app.DetermineZDistButton.Enable = 'off';
+            app.DetermineZDistButton.Tooltip = {'Determine the distance between the probe and the AUT.'};
+            app.DetermineZDistButton.Layout.Row = 3;
+            app.DetermineZDistButton.Layout.Column = 2;
+            app.DetermineZDistButton.Text = 'Determine Z Dist';
+
+            % Create DetermineCriteriaButton
+            app.DetermineCriteriaButton = uibutton(app.GridLayout, 'push');
+            app.DetermineCriteriaButton.ButtonPushedFcn = createCallbackFcn(app, @DetermineCriteriaButtonPushed, true);
+            app.DetermineCriteriaButton.Enable = 'off';
+            app.DetermineCriteriaButton.Tooltip = {'Determine the sampling criteria for a given frequency. Recommended to run "Determine Z Dist" first.'};
+            app.DetermineCriteriaButton.Layout.Row = 3;
+            app.DetermineCriteriaButton.Layout.Column = 3;
+            app.DetermineCriteriaButton.Text = 'Determine Criteria';
+
+            % Create FindProbeCenterButton
+            app.FindProbeCenterButton = uibutton(app.GridLayout, 'push');
+            app.FindProbeCenterButton.ButtonPushedFcn = createCallbackFcn(app, @FindProbeCenterButtonPushed, true);
+            app.FindProbeCenterButton.Enable = 'off';
+            app.FindProbeCenterButton.Layout.Row = 4;
+            app.FindProbeCenterButton.Layout.Column = 2;
+            app.FindProbeCenterButton.Text = 'Find Probe Center';
+
+            % Create GRBLCommandCheckBox
+            app.GRBLCommandCheckBox = uicheckbox(app.GridLayout);
+            app.GRBLCommandCheckBox.ValueChangedFcn = createCallbackFcn(app, @GRBLCommandCheckBoxValueChanged, true);
+            app.GRBLCommandCheckBox.Enable = 'off';
+            app.GRBLCommandCheckBox.Text = 'GRBL Command';
+            app.GRBLCommandCheckBox.Layout.Row = 6;
+            app.GRBLCommandCheckBox.Layout.Column = 1;
+
+            % Create RunMeasurementButton
+            app.RunMeasurementButton = uibutton(app.GridLayout, 'push');
+            app.RunMeasurementButton.ButtonPushedFcn = createCallbackFcn(app, @RunMeasurementButtonPushed, true);
+            app.RunMeasurementButton.Enable = 'off';
+            app.RunMeasurementButton.Layout.Row = 5;
+            app.RunMeasurementButton.Layout.Column = 4;
+            app.RunMeasurementButton.Text = 'Run Measurement';
+
+            % Create RawtoStructButton
+            app.RawtoStructButton = uibutton(app.GridLayout, 'push');
+            app.RawtoStructButton.ButtonPushedFcn = createCallbackFcn(app, @RawtoStructButtonPushed, true);
+            app.RawtoStructButton.Layout.Row = 6;
+            app.RawtoStructButton.Layout.Column = 5;
+            app.RawtoStructButton.Text = 'Raw to Struct';
+
+            % Create StructtoPlotsButton
+            app.StructtoPlotsButton = uibutton(app.GridLayout, 'push');
+            app.StructtoPlotsButton.ButtonPushedFcn = createCallbackFcn(app, @StructtoPlotsButtonPushed, true);
+            app.StructtoPlotsButton.Layout.Row = 7;
+            app.StructtoPlotsButton.Layout.Column = 5;
+            app.StructtoPlotsButton.Text = 'Struct to Plots';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = moveGUI
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
