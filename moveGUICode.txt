@@ -400,6 +400,8 @@ classdef moveGUI < matlab.apps.AppBase
             % S21 data
             s = app.structy.s;
 
+            freq = app.structy.frequency;
+
             % Calculate magnitude
             mag = 20*log10(abs(s));
 
@@ -433,7 +435,7 @@ classdef moveGUI < matlab.apps.AppBase
             colorbar;
             xlabel('x/\lambda');
             ylabel('y/\lambda');
-            title('S21 Magnitude (dB)');
+            title('S21 Magnitude @ ' + string(freq/1e9) + ' GHz (dB)');
             shading('interp');
             figure('Position', [720, 250, 700, 500])
             % phase_figure = uifigure("Position", [600 300 400 450]);
@@ -441,7 +443,7 @@ classdef moveGUI < matlab.apps.AppBase
             colorbar;
             xlabel('x/\lambda');
             ylabel('y/\lambda');
-            title('S21 Phase (Radians)');
+            title('S21 Phase @ '  + string(freq/1e9) +  ' GHz (Radians)');
             shading('interp');
         end
     end
