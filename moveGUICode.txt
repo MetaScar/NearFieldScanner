@@ -124,7 +124,12 @@ classdef moveGUI < matlab.apps.AppBase
         function initSerial(app)
             app.StatusTextArea.Value = "Connecting to GRBL";
             % Connect to serial
-            app.x = serialport('COM6', 115200);
+            try
+                app.x = serialport('COM6', 115200);
+            catch
+                uialert(app.UIFigure, "Error! Unable to connect to serial of Arduino Uno R3. Please make sure the Arduino is plugged into the computer.", "Error! Unable to Connect");
+                return
+            end
             % the serial readline command has a timeout that will stop program before
             % procedures (namely homing) are completed. So extend time as needed
             app.x.Timeout = 120;
@@ -555,7 +560,7 @@ classdef moveGUI < matlab.apps.AppBase
 
         % Button pushed function: ProbeMaintenanceButton
         function ProbeMaintenanceButtonPushed(app, event)
-            command = "G90 X-892.8 Y-106.8 Z-477.2";
+            command = "G90 X-898.8 Y-106.8 Z-477.2";
             writeline(app.x, command);
         end
 
@@ -699,7 +704,10 @@ classdef moveGUI < matlab.apps.AppBase
                 uialert(app.UIFigure, "Error! The machine is not precise enough to handle the small step size required for this configuration.", "ERROR");
                 returnF
             end
-            app.X = 2*app.d*sin(app.thetaM);
+            % divide by sqrt(2) b/c the diagonal of the square scan area is
+            % the longest point (so is found using the maximum angle), 
+            % but we need the scan width and height
+            app.X = (2*app.d*sin(app.thetaM)) / sqrt(2);
             if (app.X > (app.maxX - app.minX)) || (app.X > (app.maxY - app.minY))
                 uialert(app.UIFigure, "Error! The machine does not have the movement capabilities to meet the criteria! The required length is too long.", "ERROR");
                 return
