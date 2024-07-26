@@ -360,10 +360,10 @@ classdef moveGUI < matlab.apps.AppBase
             portProbe = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the Probe during measurement?", "Port of AUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
 
             if isnan(app.d)
-                    dTemp = inputdlg("It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here. Otherwise, leave empty/cancel.");
+                    dTemp = inputdlg("It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here (in mm). Otherwise, leave empty/cancel.");
                     if ~isempty(dTemp)
                         while str2double(dTemp) < 0
-                            dTemp = inputdlg("Input must be positive! It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here. Otherwise, leave empty/cancel.");
+                            dTemp = inputdlg("Input must be positive! It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here (in mm). Otherwise, leave empty/cancel.");
                         end
                         app.d = str2double(dTemp);
                     else
@@ -438,6 +438,7 @@ classdef moveGUI < matlab.apps.AppBase
             % mag_figure = uifigure("Position", [600 300 400 450]);
             pcolor(unique_x, unique_y, Mag);
             colorbar;
+            axis equal
             xlabel('x/\lambda');
             ylabel('y/\lambda');
             title('S21 Magnitude @ ' + string(freq/1e9) + ' GHz (dB)');
@@ -445,7 +446,9 @@ classdef moveGUI < matlab.apps.AppBase
             figure('Position', [720, 250, 700, 500])
             % phase_figure = uifigure("Position", [600 300 400 450]);
             pcolor(unique_x, unique_y, Phase);
+            colormap("hsv");
             colorbar;
+            axis equal
             xlabel('x/\lambda');
             ylabel('y/\lambda');
             title('S21 Phase @ '  + string(freq/1e9) +  ' GHz (Radians)');
@@ -704,10 +707,7 @@ classdef moveGUI < matlab.apps.AppBase
                 uialert(app.UIFigure, "Error! The machine is not precise enough to handle the small step size required for this configuration.", "ERROR");
                 returnF
             end
-            % divide by sqrt(2) b/c the diagonal of the square scan area is
-            % the longest point (so is found using the maximum angle), 
-            % but we need the scan width and height
-            app.X = (2*app.d*sin(app.thetaM)) / sqrt(2);
+            app.X = (2*app.d*sin(app.thetaM));
             if (app.X > (app.maxX - app.minX)) || (app.X > (app.maxY - app.minY))
                 uialert(app.UIFigure, "Error! The machine does not have the movement capabilities to meet the criteria! The required length is too long.", "ERROR");
                 return
@@ -990,6 +990,8 @@ classdef moveGUI < matlab.apps.AppBase
             app.GRBLCommandCheckBox.Enable = false;
             app.GRBLCommandEditField.Enable = false;
             app.ResponseTextArea.Enable = false;
+            app.RawtoStructButton.Enable = false;
+            app.StructtoPlotsButton.Enable = false;
             % Verify z position
             zoffset = uiconfirm(app.UIFigure, "Moving Machine to Z Position Offset! Be on standby at the EStop if something goes wrong.", "Be on Standby", "Icon", "warning");
             if strcmp(zoffset, "Cancel")
