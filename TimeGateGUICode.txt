@@ -24,6 +24,7 @@ classdef TimeGateGUI < matlab.apps.AppBase
         time % time :)
         freq % frequency <:)
         s21 % The s21 data from rawData
+        lengthS % Description
     end
     
     methods (Access = private)
@@ -33,6 +34,7 @@ classdef TimeGateGUI < matlab.apps.AppBase
             s = table2array(app.rawData(:,3));
             app.freq = s(1).Frequencies;
             s_length = length(s);
+            app.lengthS = s_length;
             f_length = length(app.freq);
 
             app.s21 = NaN(s_length,f_length);
@@ -67,7 +69,7 @@ classdef TimeGateGUI < matlab.apps.AppBase
             gate = zeros(length(app.s21), 1);
             gate(start_id:stop_id) = window;
 
-            s1 = app.s21(1,:);
+            s1 = transpose(app.s21(1,:));
             s1_time = fftshift(ifft(s1)) * length(s1);
             s1_gated = s1_time .* gate;
             S1_gated = fft(fftshift(s1_gated)) / length(s1);
@@ -80,10 +82,10 @@ classdef TimeGateGUI < matlab.apps.AppBase
             legend(app.UIAxes, 'Location', 'Best')
             grid(app.UIAxes, "on");
 
-            plot(app.UIAxes2, app.time/1e9, app.db(s1_time), 'DisplayName', 'Ungated');
+            plot(app.UIAxes2, app.time*1e9, app.db(s1_time), 'DisplayName', 'Ungated');
             hold(app.UIAxes2, 'on')
-            plot(app.UIAxes2, app.time/1e9, app.db(s1_gated), 'DisplayName', 'Gated');
-            xlim(app.UIAxes2, [(app.TimeStartEditField.Value * 1e-9), (app.TimeStartEditField.Value * 1e-9)])
+            plot(app.UIAxes2, app.time*1e9, app.db(s1_gated), 'DisplayName', 'Gated');
+            xlim(app.UIAxes2, [app.TimeStartEditField.Value, app.TimeStopEditField.Value])
             hold(app.UIAxes2, 'off')
             legend(app.UIAxes2, 'Location', 'Best')
             grid(app.UIAxes2, "on");
@@ -91,7 +93,41 @@ classdef TimeGateGUI < matlab.apps.AppBase
         end
         
         function gateRaw(app)
-            
+            center = app.CenterEditField.Value * 1e-9;
+            span = app.SpanEditField.Value * 1e-9;
+            s_length = app.lengthS;
+            f_length = length(app.freq);
+
+            start = center - (span/2);
+            stop = center + (span/2);
+            start_id = app.find_nearest_index(app.time, start);
+            stop_id = app.find_nearest_index(app.time, stop);
+            window_width = abs(start_id-stop_id)+1;
+            window = kaiser(window_width, 6);
+
+            gate = zeros(f_length, 1);
+            gate(start_id:stop_id) = window;
+
+            % IFFT to time, gate, and return to freq with FFT
+            s21_gated = NaN(s_length,f_length);
+            for i = 1:s_length
+                s21_time = fftshift(ifft(app.s21(i,:))) * s_length;
+                s21_Tgated = transpose(s21_time) .* gate;
+                s21_gated(i,:) = fft(fftshift(s21_Tgated)) / s_length;
+            end
+
+            % create matrix for s21 to fit in 21 spot and create s param
+            s21_params = sparameters.empty(0);
+            for i = 1:s_length
+                tmpMatrix = NaN([2,2,f_length]);
+                tmpMatrix(2,1,:) = s21_gated(i,:);
+                s21_params(i) = sparameters(tmpMatrix, app.freq);
+            end
+
+            paramsTable = app.rawData;
+            paramsTable(:,3) = array2table(transpose(s21_params));
+            Filename = sprintf('NearFieldGatedData_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
+            save(Filename, 'paramsTable');
         end
     end
     
