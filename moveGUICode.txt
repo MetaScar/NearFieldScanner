@@ -1148,11 +1148,12 @@ classdef moveGUI < matlab.apps.AppBase
                     if ~exist('file', 'var')
                         return
                     end
-                    app.structy = load(fullfile(path,file));
-                    app.structy = app.structy.tempStructy;
+                    table = load(fullfile(path,file));
+                    table = table.paramsTable;
                     catch
                         uialert(app.UIFigure, "Error! File failed to open. This could be due to the incorrect file being opened (not a raw Near Field data file) or Matlab doesn't have the necessary permissions to read the file.", "File Open Error");
                     end
+                    TimeGateGUI(app, table);
                 case 'No'
                     return
             end
