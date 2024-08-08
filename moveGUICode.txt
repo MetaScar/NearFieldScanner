@@ -56,6 +56,7 @@ classdef moveGUI < matlab.apps.AppBase
         centerY = nan % The absolute position for code y (machine z) for the center of the probe
         criteria = false % Indicator variable for whether or not the criteria have been sucessfully determined
         structy = nan % The struct containing the S21 data for near field measurements. x, y, and zDistance data in mm
+        timeGateApp % App variable generated when creating the time gate app
     end
     
     properties (Access = public)
@@ -1152,12 +1153,20 @@ classdef moveGUI < matlab.apps.AppBase
                     table = table.paramsTable;
                     catch
                         uialert(app.UIFigure, "Error! File failed to open. This could be due to the incorrect file being opened (not a raw Near Field data file) or Matlab doesn't have the necessary permissions to read the file.", "File Open Error");
+                        return
                     end
-                    TimeGateGUI(app, table);
+                    app.timeGateApp = TimeGateGUI(app, table);
                 case 'No'
                     return
             end
 
+        end
+
+        % Close request function: UIFigure
+        function UIFigureCloseRequest(app, event)
+            delete(app.timeGateApp);
+            delete(app)
+            
         end
     end
 
@@ -1171,6 +1180,7 @@ classdef moveGUI < matlab.apps.AppBase
             app.UIFigure = uifigure('Visible', 'off');
             app.UIFigure.Position = [100 100 640 480];
             app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
             app.UIFigure.KeyPressFcn = createCallbackFcn(app, @UIFigureKeyPress, true);
 
             % Create GridLayout
