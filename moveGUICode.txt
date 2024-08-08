@@ -4,6 +4,7 @@ classdef moveGUI < matlab.apps.AppBase
     properties (Access = public)
         UIFigure                   matlab.ui.Figure
         GridLayout                 matlab.ui.container.GridLayout
+        RawtoGatedButton           matlab.ui.control.Button
         StructtoPlotsButton        matlab.ui.control.Button
         RawtoStructButton          matlab.ui.control.Button
         RunMeasurementButton       matlab.ui.control.Button
@@ -55,6 +56,11 @@ classdef moveGUI < matlab.apps.AppBase
         centerY = nan % The absolute position for code y (machine z) for the center of the probe
         criteria = false % Indicator variable for whether or not the criteria have been sucessfully determined
         structy = nan % The struct containing the S21 data for near field measurements. x, y, and zDistance data in mm
+    end
+    
+    properties (Access = public)
+        gateCenter % Gating center from gating app
+        gateWidth % Gating width from gating app
     end
     
     methods (Access = private)
@@ -1131,6 +1137,27 @@ classdef moveGUI < matlab.apps.AppBase
                     return
             end
         end
+
+        % Button pushed function: RawtoGatedButton
+        function RawtoGatedButtonPushed(app, event)
+            resp = uiconfirm(app.UIFigure, "This program will take raw data, show the time and frequency domain of one of the corners and the center, and wait for the user to select the desired time gating settings. Continue?", "Time Gating Program", "Options", ["Yes", "No"]);
+            switch resp
+                case 'Yes'
+                    try
+                    [file,path] = uigetfile('*.mat');
+                    if ~exist('file', 'var')
+                        return
+                    end
+                    app.structy = load(fullfile(path,file));
+                    app.structy = app.structy.tempStructy;
+                    catch
+                        uialert(app.UIFigure, "Error! File failed to open. This could be due to the incorrect file being opened (not a raw Near Field data file) or Matlab doesn't have the necessary permissions to read the file.", "File Open Error");
+                    end
+                case 'No'
+                    return
+            end
+
+        end
     end
 
     % Component initialization
@@ -1343,6 +1370,13 @@ classdef moveGUI < matlab.apps.AppBase
             app.StructtoPlotsButton.Layout.Row = 7;
             app.StructtoPlotsButton.Layout.Column = 5;
             app.StructtoPlotsButton.Text = 'Struct to Plots';
+
+            % Create RawtoGatedButton
+            app.RawtoGatedButton = uibutton(app.GridLayout, 'push');
+            app.RawtoGatedButton.ButtonPushedFcn = createCallbackFcn(app, @RawtoGatedButtonPushed, true);
+            app.RawtoGatedButton.Layout.Row = 8;
+            app.RawtoGatedButton.Layout.Column = 5;
+            app.RawtoGatedButton.Text = 'Raw to Gated';
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
