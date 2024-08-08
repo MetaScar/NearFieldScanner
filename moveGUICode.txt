@@ -437,6 +437,7 @@ classdef moveGUI < matlab.apps.AppBase
             figure('Position',[20, 250, 700, 500])
             % mag_figure = uifigure("Position", [600 300 400 450]);
             pcolor(unique_x, unique_y, Mag);
+            colormap("jet");
             colorbar;
             axis equal
             xlabel('x/\lambda');
