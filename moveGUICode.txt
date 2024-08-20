@@ -36,7 +36,7 @@ classdef moveGUI < matlab.apps.AppBase
         x % The serial connection to grbl arduino
         minX = -898.8 % minimum code x position (machine y)
         maxX = -50.8 % maximum code x position (machine y)
-        minY = -619.2 % minimum code y position (machine z)
+        minY = -597.2 % minimum code y position (machine z)
         maxY = -1.2 % maximum code y position (machine z)
         minZ = -898.8 % minimum code z position (machine x)
         maxZ = -395.8 % maximum code z position (machine x)
@@ -284,6 +284,9 @@ classdef moveGUI < matlab.apps.AppBase
             app.DetermineCriteriaButton.Enable = true;
             app.FindProbeCenterButton.Enable = true;
             app.RunMeasurementButton.Enable = true;
+            app.RawtoStructButton.Enable = true;
+            app.StructtoPlotsButton.Enable = true;
+            app.RawtoGatedButton.Enable = true;
 
             app.GRBLCommandCheckBox.Enable = true;
             if app.GRBLCommandCheckBox.Value
@@ -1000,6 +1003,7 @@ classdef moveGUI < matlab.apps.AppBase
             app.ResponseTextArea.Enable = false;
             app.RawtoStructButton.Enable = false;
             app.StructtoPlotsButton.Enable = false;
+            app.RawtoGatedButton.Enable = false;
             % Verify z position
             zoffset = uiconfirm(app.UIFigure, "Moving Machine to Z Position Offset! Be on standby at the EStop if something goes wrong.", "Be on Standby", "Icon", "warning");
             if strcmp(zoffset, "Cancel")
