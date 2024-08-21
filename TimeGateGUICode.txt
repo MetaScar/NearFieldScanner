@@ -69,7 +69,21 @@ classdef TimeGateGUI < matlab.apps.AppBase
             gate = zeros(length(app.freq), 1);
             gate(start_id:stop_id) = window;
 
-            s1 = transpose(app.s21(1,:));
+
+            % find the center of the s21 matrix
+            x = table2array(app.rawData(:,1));
+            y = table2array(app.rawData(:,2));
+            [~, indexX] = min(abs(x-0));
+            [~, indexY] = min(abs(y-0));
+            centerX = x(indexX);
+            centerY = y(indexY);
+
+            for i = 1:length(x)
+                if x(i) == centerX & y(i) == centerY
+                    s1 = transpose(app.s21(i,:));
+                end
+            end
+
             s1_time = fftshift(ifft(s1)) * length(s1);
             s1_gated = s1_time .* gate;
             S1_gated = fft(fftshift(s1_gated)) / length(s1);
