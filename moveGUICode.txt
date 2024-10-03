@@ -299,7 +299,7 @@ classdef moveGUI < matlab.apps.AppBase
         % https://github.com/Sam-Freitas/python_to_GRBL/blob/main/simple_stream.m
         function WaitMotionComplete(app)
             % wait a second
-            pause(1);
+            % pause(1);
             % used later to escape function
             idle_counter = 0;
 
@@ -311,7 +311,7 @@ classdef moveGUI < matlab.apps.AppBase
                 % get response
                 grbl_out = readline(app.x);
                 grbl_response = app.decode_unicode(strip(grbl_out));
-                % check if response isn't 'ok'. If 'Idle' for 10 loops, movement
+                % check if response isn't 'ok'. If 'Idle' for 5 loops, movement
                 % done
                 if ~isequal(grbl_response,'ok')
 
@@ -320,7 +320,7 @@ classdef moveGUI < matlab.apps.AppBase
                     end
                 end
 
-                if idle_counter > 10
+                if idle_counter > 5
                     break
                 end
                 % in the GRBL documentation it reccomends a 5Hz rate for the '?' command
@@ -1050,6 +1050,8 @@ classdef moveGUI < matlab.apps.AppBase
             pna = instruments.VNA.N5224A("Address", "GPIB0::16::INSTR");
             % Make the VNA screen nice and fancy
             pna.set("View", "Default");
+            % Set the averaging of measurements to 1 for the sake of speed
+            pna.averageCount = 1;
 
             tablePos = 1;
             odd = true;
