@@ -37,5 +37,9 @@ codegen/
 # Mat files
 *.mat
 
+# S-Parameter files
+*.s1p
+*.s2p
+
 # Octave session info
 octave-workspace

@@ -11,6 +11,10 @@ This quickstart guide is assuming you are trying to run the near-field scanner. 
 6. The Matlab App Designer should have opened. Start they app by pressing the green play button up in the top left.
 7. 
 
+# Data
+It is not best practice to put your raw data files inside of git. Git is for tracking changes in text files. Instead, data files for the GitHub repo will be located in the [Microsoft Teams's `Files/Near Field Scanner/GitHubData` folder](https://o365coloradoedu.sharepoint.com/:f:/r/sites/ECEE-EMRG/Shared%20Documents/General/Near%20Field%20Scanner/GitHubData?csf=1&web=1&e=mdIfOC).
+Folders named "Data" will be included in the git repo for the convenience of the user to put their own data. If there is data available in the Teams folder, it will be located in the same directory.
+For example, the "Data" folder located at `./ScannerCode/Data/` is located at `/Near Field Scanner/GitHubData/ScannerCode` directory on Teams.
 
 # Contact
 Professor Cody Scarborough: cody.scarborough@colorado.edu

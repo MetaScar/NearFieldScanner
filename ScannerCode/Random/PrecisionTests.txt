@@ -1,0 +1,8 @@
+LX
+T1: +20 mm
+Result: +20.27 mm
+
+
+LR
+T1: +20 mm
+Result: +20.27 mm

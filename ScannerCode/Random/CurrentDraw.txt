@@ -1,0 +1,40 @@
+Wall Power Measurement:
+	Measurement device Error: 
+
+Idle Max:
+0.349 A
+
+X Axis Max:
+0.76 A
+Note: adding resistance adds a little bit of current draw. Thus, always have some overhead
+
+Y Axis Max:
+0.688
+
+Z Axis Max:
+0.679
+Not: b/c current is dpendant on weight of load, this one might be affected the most by future attachments
+
+X, Y, and Z Axis Max:
+0.924 A
+
+Easy to conclude that current draw is not linear. I think a power supply with 2 or 3 A of power delivery should be plenty.
+
+
+Desktop DC Power Supply
+17.5 V input
+
+Idel Max:
+0.07 A
+
+X Axis Max:
+1.33 A
+
+Y Axis Max:
+1.05
+
+Z Axis Max:
+1.03
+
+X Y and Z Max:
+> 2 A

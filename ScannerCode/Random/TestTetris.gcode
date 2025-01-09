@@ -1,0 +1,7 @@
+$X
+G21
+G90 ; relative position
+G92 X0 Y0 Z0 ; set origin to current position
+G0 X0 Y0 Z0 F2000.0
+G04 P0.0000
+G01 X4.5425143580 Y3.4030407047 Z0.7945965262 F630.4312190549
