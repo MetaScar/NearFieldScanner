@@ -5,7 +5,7 @@ This quickstart guide is assuming you are trying to run the near-field scanner. 
 
 1. Pull the git repo with desired method (using [GitHub Desktop](https://desktop.github.com/download/), the [terminal](https://github.com/git-guides/git-pull), etc.).
 2. Go into the `ScannerCode` directory.
-3. Start Matlab.^[1]
+3. [Start Matlab][1].
 
 
 # Contact
@@ -15,4 +15,4 @@ Jacob Stewart: jast5436@colorado.edu
 
 Joel Johnson: jojo1082@colorado.edu
 
-[1] Test
+[1]: Test
