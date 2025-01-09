@@ -1,33 +1,13 @@
-# Autosave files
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+CMakeUserPresets.json
 *.asv
-*.m~
-*.autosave
-*.slx.r*
-*.mdl.r*
-
-# Derived content-obscured files
-*.p
-
-# Compiled MEX files
-*.mex*
-
-# Packaged app and toolbox files
-*.mlappinstall
-*.mltbx
-
-# Deployable archives
-*.ctf
-
-# Generated helpsearch folders
-helpsearch*/
-
-# Code generation folders
-slprj/
-sccprj/
-codegen/
-
-# Cache files
-*.slxc
-
-# Cloud based storage dotfile
-.MATLABDriveTag

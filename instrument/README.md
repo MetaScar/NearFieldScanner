@@ -1,2 +1,2 @@
 # instrument
-Contains tools for instrument control and management
+MATLAB wrapper classes for lab instruments.

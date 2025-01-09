@@ -5,7 +5,7 @@ classdef O_54750A < handle
     %                   Keysight IVI drivers for the PNA (tested with
     %                       IVI driver for Agilent Network Analyzers,
     %                       1.2.3.0, 32/64-bit, IVI-C/IVI-COM)
-    % To-Do:    Make sure S21 and S12 are correct in getS2P
+    % To-Do:    Figure out how to display a certain channel
     %           Remove %#ok<SPERR>
 
     properties(Access=public)
@@ -126,6 +126,7 @@ classdef O_54750A < handle
 
         function trace = getTrace(this)
             this.connect();
+            this.send("SING")
             d = this.sendAndRead("WAV:DATA?");
             d = strsplit(d, ',');
             d = str2double(d);
@@ -133,7 +134,8 @@ classdef O_54750A < handle
             xdataRange = str2double(this.sendAndRead("WAV:XRAN?"));
             xdataStep = str2double(this.sendAndRead("WAV:XINC?"));
             x = xdataFirst + xdataStep*(0:(-1+xdataRange/xdataStep));
-            trace = [x', d'];
+            trace.voltage = d';
+            trace.time = x';
             this.disconnect();
         end
 

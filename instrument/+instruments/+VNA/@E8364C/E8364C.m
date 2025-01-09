@@ -6,8 +6,7 @@ classdef E8364C < handle
     %                   Keysight IVI drivers for the PNA (tested with
     %                       IVI driver for Agilent Network Analyzers,
     %                       1.2.3.0, 32/64-bit, IVI-C/IVI-COM)
-    % To-Do:    Make sure S21 and S12 are correct in getS2P
-    %           Remove %#ok<SPERR>
+    % To-Do:    Remove %#ok<SPERR>
 
     properties(Access=public)
         address
@@ -67,13 +66,7 @@ classdef E8364C < handle
 
             %% Handling View parameter
             if not(isempty(p.Results.View))
-                if strcmpi(p.Results.View, "V1") %#ok<IFBDUP>
-                    this.setView();
-                elseif strcmpi(p.Results.View, "V2")
-                    this.setView();
-                else
-                    this.setView(); % Default
-                end
+                this.setView(p.Results.View);
             end
 
             %% Handling Average_Count parameter
@@ -145,38 +138,76 @@ classdef E8364C < handle
             this.averageCount = 3;
         end
 
-        function this = setView(this)
-            this.connect();
-            % Add functionality where it finds all windows and then deletes
-            % all windows.
-            this.send("DISP:WIND1:TRAC1:DEL");
-            this.send("DISP:WIND1:TRAC2:DEL");
-            this.send("DISP:WIND1:TRAC3:DEL");
-            this.send("DISP:WIND1:TRAC4:DEL");
-            this.send("DISP:WIND2:TRAC1:DEL");
-            this.send("DISP:WIND2:TRAC2:DEL");
-            this.send("DISP:WIND2:TRAC3:DEL");
-            this.send("DISP:WIND2:TRAC4:DEL");
-            this.sendAndWait("DISP:ARR QUAD");
+        function this = setView(this, view)
+            this.connect;
 
-            this.send("CALC:PAR:DEL:ALL");
-            this.send("CALC:PAR:EXT 'S11', 'S1_1'");
-            this.send("CALC:PAR:EXT 'S22', 'S2_2'");
-            this.send("CALC:PAR:EXT 'S21', 'S2_1'");
-            this.send("CALC:PAR:EXT 'S12', 'S1_2'");
+            winNumbs = this.sendAndRead("DISP:CAT?");
+            winNumbs = str2double(strsplit(erase(winNumbs,""""),","));
 
-            this.send("DISP:WIND1:TRAC1:FEED 'S11'");
-            this.send("CALC:PAR:SEL 'S11'");
-            this.send("CALC:FORM SMIT");
-            this.send("DISP:WIND2:TRAC1:FEED 'S22'");
-            this.send("CALC:PAR:SEL 'S22'");
-            this.send("CALC:FORM SMIT");
-            this.send("DISP:WIND3:TRAC1:FEED 'S21'");
-            this.send("CALC:PAR:SEL 'S21'");
-            this.send("CALC:FORM MLOG");
-            this.send("DISP:WIND4:TRAC2:FEED 'S12'");
-            this.send("CALC:PAR:SEL 'S12'");
-            this.send("CALC:FORM MLOG");
+            for winIdx = winNumbs
+                traceNumbs = this.sendAndRead("DISP:WIND"+num2str(winIdx)+":CAT?");
+                traceNumbs = str2double(strsplit(erase(traceNumbs,""""),","));
+                if isnan(traceNumbs)
+                    continue;
+                else
+                    for traceIdx = traceNumbs
+                        this.send("DISP:WIND"+num2str(winIdx)+ ...
+                            ":TRAC"+num2str(traceIdx)+":DEL");
+                    end
+                end
+            end
+
+            switch view
+                case "Default_S2P"
+                    this.sendAndWait("DISP:ARR QUAD");
+        
+                    this.send("CALC:PAR:DEL:ALL");
+                    this.send("CALC:PAR:EXT 'S11', 'S1_1'");
+                    this.send("CALC:PAR:EXT 'S22', 'S2_2'");
+                    this.send("CALC:PAR:EXT 'S21', 'S2_1'");
+                    this.send("CALC:PAR:EXT 'S12', 'S1_2'");
+        
+                    this.send("DISP:WIND1:TRAC1:FEED 'S11'");
+                    this.send("CALC:PAR:SEL 'S11'");
+                    this.send("CALC:FORM SMIT");
+                    this.send("DISP:WIND2:TRAC1:FEED 'S22'");
+                    this.send("CALC:PAR:SEL 'S22'");
+                    this.send("CALC:FORM SMIT");
+                    this.send("DISP:WIND3:TRAC1:FEED 'S21'");
+                    this.send("CALC:PAR:SEL 'S21'");
+                    this.send("CALC:FORM MLOG");
+                    this.send("DISP:WIND4:TRAC1:FEED 'S12'");
+                    this.send("CALC:PAR:SEL 'S12'");
+                    this.send("CALC:FORM MLOG");
+
+                case "Default_S1P_P1"
+                    this.sendAndWait("DISP:ARR STAC");
+        
+                    this.send("CALC:PAR:DEL:ALL");
+                    this.send("CALC:PAR:EXT 'S11_1', 'S1_1'");
+                    this.send("CALC:PAR:EXT 'S11_2', 'S1_1'");
+        
+                    this.send("DISP:WIND1:TRAC1:FEED 'S11_1'");
+                    this.send("CALC:PAR:SEL 'S11_1'");
+                    this.send("CALC:FORM SMIT");
+                    this.send("DISP:WIND2:TRAC1:FEED 'S11_2'");
+                    this.send("CALC:PAR:SEL 'S11_2'");
+                    this.send("CALC:FORM MLOG");
+
+                case "Default_S1P_P2"
+                    this.sendAndWait("DISP:ARR STAC");
+        
+                    this.send("CALC:PAR:DEL:ALL");
+                    this.send("CALC:PAR:EXT 'S22_1', 'S2_2'");
+                    this.send("CALC:PAR:EXT 'S22_2', 'S2_2'");
+        
+                    this.send("DISP:WIND1:TRAC1:FEED 'S22_1'");
+                    this.send("CALC:PAR:SEL 'S22_1'");
+                    this.send("CALC:FORM SMIT");
+                    this.send("DISP:WIND2:TRAC1:FEED 'S22_2'");
+                    this.send("CALC:PAR:SEL 'S22_2'");
+                    this.send("CALC:FORM MLOG");
+            end
             this.disconnect();
         end
 
@@ -184,6 +215,7 @@ classdef E8364C < handle
             this.averageCount = count;
             this.connect();
             this.sendAndWait("SENS:AVER:COUN " + num2str(count));
+            this.sendAndWait("SENS:SWE:GRO:COUN " + num2str(count));
             this.disconnect();
         end
 
@@ -194,6 +226,7 @@ classdef E8364C < handle
             for sweepCount = 1:(this.averageCount+1)
                this.sendAndWait("INIT:IMM");
             end
+            this.send("MMEM:STOR:TRAC:FORM:SNP RI");
             data = this.sendAndRead("CALC:DATA:SNP:PORTS? '1,2'");
             this.send("SENS:SWE:MODE CONT");
             this.send("TRIG:SOUR IMM");
@@ -221,16 +254,13 @@ classdef E8364C < handle
         end
 
         function sParam = getS1P(this, port)
-            this.connect();
-            this.send( "TRIG:SOUR MAN");
-            this.send( "SENS:SWE:MODE SING");
-            for sweepCount = 1:(this.averageCount+1)
-               this.sendAndWait("INIT:IMM");
-            end
+            this.connect;
+            this.send( "TRIG:SOUR IMM");
+            this.send("SENS:SWE:MODE GRO");
+            this.waitTillOpComplete;
+            this.send("MMEM:STOR:TRAC:FORM:SNP RI");
             data = this.sendAndRead("CALC:DATA:SNP:PORTS? '" + num2str(port) + "'");
-            this.send("SENS:SWE:MODE CONT");
-            this.send("TRIG:SOUR IMM");
-            this.disconnect();
+            this.disconnect;
 
             data = strsplit(data, ",");
             tData = zeros(1, length(data));
@@ -292,6 +322,47 @@ classdef E8364C < handle
                 writeline(this.visaObj,command);
             else
                 error("Device not connected");
+            end
+        end
+
+        function waitTillOpComplete(this)
+            readAttemptCount1 = 10; % Number of times response is checked 
+                                    % before *OPC is sent.
+            readAttemptCount2 = 5; % Number of times *OPC is sent
+            
+            readAttemptCountdown1 = readAttemptCount1;
+            readAttemptCountdown2 = readAttemptCount2;
+            this.send("*OPC?");
+            while true
+                if exist('response', 'var')
+                    if str2double(strtrim(response))
+                        break;
+                    end
+                end
+                try
+                    response = readline(this.visaObj);
+                catch ME
+                    if not(strcmp(ME.identifier, ...
+                            'instrument:interface:visa:operationTimedOut'))
+                        rethrow(ME);
+                    else
+                        if readAttemptCountdown2 < 0
+                            % rethrow(ME);
+                            readAttemptCountdown2 = readAttemptCount2;
+                        end
+                        if readAttemptCountdown1 < 0
+                            this.send("*OPC?");
+                            readAttemptCountdown2 = readAttemptCountdown2 - 1;
+                            readAttemptCountdown1 = readAttemptCount1;
+                        end
+                        if exist('response', 'var')
+                            if str2double(strtrim(response))
+                                break;
+                            end
+                        end
+                        readAttemptCountdown1 = readAttemptCountdown1 - 1;
+                    end
+                end
             end
         end
 
