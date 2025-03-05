@@ -1,7 +1,7 @@
 classdef N5224A < handle
     % Author: Joel P Johnson
-    % Desciption: Creates a wrapper class to access the good-old E8364C PNA
-    % that keeps on living.
+    % Desciption: Creates a wrapper class to access the good-new N5224A PNA
+    % that keeps on begging for more money.
     % Prerequisites:    Keysight Connection Expert (tested with 2023)
     %                   Keysight IVI drivers for the PNA (tested with
     %                       IVI driver for Agilent Network Analyzers,
@@ -89,7 +89,7 @@ classdef N5224A < handle
 
             %% Parse input arguments
             p = inputParser(); 
-            addParameter(p,'S1P',0);
+            addParameter(p,'S1P',[]);
             addParameter(p,'SNP',{})
             parse(p,varargin{:});
 
@@ -244,10 +244,10 @@ classdef N5224A < handle
 
             % Retrieve data
             this.connect();
-            this.send( "TRIG:SOUR IMM");
-            this.send("SENS:SWE:MODE GRO");
+            this.send( "TRIG:SOUR IMM");    % trigger only once
+            this.send("SENS:SWE:MODE GRO"); % not sure; seems to allow multiple triggers
             this.waitTillOpComplete;
-            this.send("MMEM:STOR:TRAC:FORM:SNP RI");
+            this.send("MMEM:STOR:TRAC:FORM:SNP RI"); % S params as real and imaginary
             data = this.sendAndRead("CALC:DATA:SNP:PORTS? " ...
                     + portCommSuffix);
             this.disconnect();

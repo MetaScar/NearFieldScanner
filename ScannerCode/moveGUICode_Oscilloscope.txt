@@ -1,4 +1,4 @@
-classdef moveGUI < matlab.apps.AppBase
+classdef moveGUI_Oscilloscope < matlab.apps.AppBase
 
     % Properties that correspond to app components
     properties (Access = public)
@@ -46,11 +46,11 @@ classdef moveGUI < matlab.apps.AppBase
         stepSize % The step size the motor will move
         clearTimer % A timer to clear the status field after 2 seconds
         zButtonPushed = false % Bool for whether or not the z distance button has been pressed; default not
-        zStart = nan % The code z (machine x) position of the AUT/probe. Used for determining distance "d" sampling criterion
-        d = nan % Distance between the AUT and the probe
+        zStart = nan % The code z (machine x) position of the DUT/probe. Used for determining distance "d" sampling criterion
+        d = nan % Distance between the DUT and the probe
         deltaX = nan % The change in position 
         X = nan % The total width of the scan area required to meet the sampling criteria
-        thetaM =nan % The maximum angle (in radians) between the AUT normal and the probe center
+        thetaM =nan % The maximum angle (in radians) between the DUT normal and the probe center
         centerButtonPushed = false % An indicator variable; whether or not the center button has been pressed yet
         centerX = nan % The absolute position for code x (machine y) for the center of the probe
         centerY = nan % The absolute position for code y (machine z) for the center of the probe
@@ -366,14 +366,14 @@ classdef moveGUI < matlab.apps.AppBase
                 sdata(i) = sparam(selectedFreqIndex);
             end
 
-            portAUT = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the AUT during measurement?", "Port of AUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
-            portProbe = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the Probe during measurement?", "Port of AUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
+            portDUT = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the DUT during measurement?", "Port of DUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
+            portProbe = uiconfirm(app.UIFigure, "Which port of the VNA was connected to the Probe during measurement?", "Port of DUT", "Options", ["Port 1", "Port 2", "Port 3", "Port 4"]);
 
             if isnan(app.d)
-                    dTemp = inputdlg("It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here (in mm). Otherwise, leave empty/cancel.");
+                    dTemp = inputdlg("It looks like the distance between the probe and the DUT is not stored locally. If it is known, please enter here (in mm). Otherwise, leave empty/cancel.");
                     if ~isempty(dTemp)
                         while str2double(dTemp) < 0
-                            dTemp = inputdlg("Input must be positive! It looks like the distance between the probe and the AUT is not stored locally. If it is known, please enter here (in mm). Otherwise, leave empty/cancel.");
+                            dTemp = inputdlg("Input must be positive! It looks like the distance between the probe and the DUT is not stored locally. If it is known, please enter here (in mm). Otherwise, leave empty/cancel.");
                         end
                         app.d = str2double(dTemp);
                     else
@@ -381,7 +381,7 @@ classdef moveGUI < matlab.apps.AppBase
                     end
             end
 
-            app.structy = struct('x', table.("X position"), 'y', table.("Y position"), 's', sdata, 'frequency', freq(selectedFreqIndex), 'zDistance', app.d, 'AUTPort', portAUT, 'ProbePort', portProbe);
+            app.structy = struct('x', table.("X position"), 'y', table.("Y position"), 's', sdata, 'frequency', freq(selectedFreqIndex), 'zDistance', app.d, 'DUTPort', portDUT, 'ProbePort', portProbe);
 
             Filename = sprintf('NearFieldStructData_' + string(freq(selectedFreqIndex)/1e9)  + 'GHz_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
             tempStructy = app.structy;
@@ -499,7 +499,7 @@ classdef moveGUI < matlab.apps.AppBase
             app.ProbeMaintenanceButton.Enable = true;
             app.InitializeButton.Enable = false;
             app.DetermineZDistButton.Enable = true;
-            app.DetermineCriteriaButton.Enable = true;
+            app.DetermineCriteriaButton.Enable = false;
             app.FindProbeCenterButton.Enable = true;
             app.GRBLCommandCheckBox.Enable = true;
             app.RunMeasurementButton.Enable = true;
@@ -593,7 +593,7 @@ classdef moveGUI < matlab.apps.AppBase
         % Button pushed function: DetermineZDistButton
         function DetermineZDistButtonPushed(app, event)
             if ~app.zButtonPushed
-                ok = uiconfirm(app.UIFigure, "This will initialize the process of finding the Z distance, which is the distance between the probe and the AUT to meet the sampling criteria. This particular process will find the absolute position of the AUT relative to the probe. Press OK to return to the movement menu, and position the probe as close as possible to the AUT. Once this is complete, press the Determine Z Dist button. Press cancel to stop this process.", "Determine Z Distance");
+                ok = uiconfirm(app.UIFigure, "This will initialize the process of finding the Z distance, which is the distance between the probe and the DUT to meet the sampling criteria. This particular process will find the absolute position of the DUT relative to the probe. Press OK to return to the movement menu, and position the probe as close as possible to the DUT. Once this is complete, press the Determine Z Dist button. Press cancel to stop this process.", "Determine Z Distance");
                 switch ok
                     case 'OK'
                         app.zButtonPushed = true;
@@ -613,12 +613,12 @@ classdef moveGUI < matlab.apps.AppBase
                         return
                 end
             else
-                linedUp = uiconfirm(app.UIFigure, "Is the machine positioned with the probe in front of and as close to AUT as possible?", "Confirm", "Options", ["Yes","No", "Cancel"], "DefaultOption", 2, "CancelOption", 3);
+                linedUp = uiconfirm(app.UIFigure, "Is the machine positioned with the probe in front of and as close to DUT as possible?", "Confirm", "Options", ["Yes","No", "Cancel"], "DefaultOption", 2, "CancelOption", 3);
                 switch linedUp
                     case 'Yes'
-                        dist = inputdlg("Using a caliper, what is the distance between the probe and the AUT along the Z Axis? (in mm)");
+                        dist = inputdlg("Using a caliper, what is the distance between the probe and the DUT along the Z Axis? (in mm)");
                         while isnan(str2double(dist)) || str2double(dist) < 0
-                            dist = inputdlg("Input is not a positive number. Using a caliper, what is the distance between the probe and the AUT along the Z Axis? (in mm)");
+                            dist = inputdlg("Input is not a positive number. Using a caliper, what is the distance between the probe and the DUT along the Z Axis? (in mm)");
                         end
                         app.zStart = str2double(dist) + app.getPos("Z");
                         app.zButtonPushed = false;
@@ -629,7 +629,7 @@ classdef moveGUI < matlab.apps.AppBase
                         end
                         app.ProbeMaintenanceButton.Enable = true;
                         app.FindProbeCenterButton.Enable = true;
-                        app.DetermineCriteriaButton.Enable = true;
+                        app.DetermineCriteriaButton.Enable = false;
                     case 'No'
                         return
                     case 'Cancel'
@@ -646,7 +646,7 @@ classdef moveGUI < matlab.apps.AppBase
                 end
                 % without this temp var, for whatever reason, it will
                 % prompt the user for the center check before this.
-                temp = uiconfirm(app.UIFigure, "The absolute z position of AUT is " + string(app.zStart) + " mm. This will be saved internally. To use for future measurements, write it down.", "Result", "Options", "Ok");
+                temp = uiconfirm(app.UIFigure, "The absolute z position of DUT is " + string(app.zStart) + " mm. This will be saved internally. To use for future measurements, write it down.", "Result", "Options", "Ok");
                 % check to see if the user also wants to center the probe
                 % as well
             end
@@ -667,7 +667,7 @@ classdef moveGUI < matlab.apps.AppBase
         function DetermineCriteriaButtonPushed(app, event)
             app.criteria = false;
             resp = uiconfirm(app.UIFigure, "This program will determine the sampling criteria. The required input parameters will be requested from the user. If you have not already determined the starting Z position, you will be prompted to begin the process or input a previously found value. " + ...
-                "Other required inputs include the distance of the longest part of the AUT, the target frequency the AUT will be measured at, and the maximum angle between the AUT normal and the probe center. " + ...
+                "Other required inputs include the distance of the longest part of the DUT, the target frequency the DUT will be measured at, and the maximum angle between the DUT normal and the probe center. " + ...
                 "If ready to continue, press OK. To escape this process, press Cancel.", "Criteria Description.");
             switch resp
                 case 'OK'
@@ -675,29 +675,29 @@ classdef moveGUI < matlab.apps.AppBase
                     return
             end
             if isnan(app.zStart)
-                resp = uiconfirm(app.UIFigure, "Currently, the starting z distance between the probe and AUT is not stored internally. Do you want to begin the process of determining this value, or have you previously determined this value?", "Z Distance Missing", "Options", ["Find Value", "Input Value", "Cancel"]);
+                resp = uiconfirm(app.UIFigure, "Currently, the starting z distance between the probe and DUT is not stored internally. Do you want to begin the process of determining this value, or have you previously determined this value?", "Z Distance Missing", "Options", ["Find Value", "Input Value", "Cancel"]);
                 switch resp
                     case "Find Value"
                         app.zButtonPushed = false;
                         app.DetermineZDistButtonPushed();
                         return
                     case "Input Value"
-                        response = inputdlg("Please provide absolute z position (in mm) of the AUT relative to the probe.");
+                        response = inputdlg("Please provide absolute z position (in mm) of the DUT relative to the probe.");
                         while isnan(str2double(response))
-                            response = inputdlg("Input is not a number! Please provide absolute z position (in mm) of the AUT relative to the probe.");
+                            response = inputdlg("Input is not a number! Please provide absolute z position (in mm) of the DUT relative to the probe.");
                         end
                         app.zStart = str2double(response);
                     case "Cancel"
                         return
                 end
             end
-            D = inputdlg("What is the distance of the longest part of the AUT (in mm)?");
+            D = inputdlg("What is the distance of the longest part of the DUT (in mm)?");
             while isnan(str2double(D))
-                D = inputdlg("Input is not a positive number! What is the distance of the longest part of the AUT (in mm)?");
+                D = inputdlg("Input is not a positive number! What is the distance of the longest part of the DUT (in mm)?");
             end
-            f = inputdlg("What is the target frequency the AUT will be measured at (in GHz)?");
+            f = inputdlg("What is the target frequency the DUT will be measured at (in GHz)?");
             while isnan(str2double(f)) || ~(str2double(f) > 0)
-                f = inputdlg("Input is not a positive number! What is the target frequency the AUT will be measured at (in GHz)?");
+                f = inputdlg("Input is not a positive number! What is the target frequency the DUT will be measured at (in GHz)?");
             end
             f_num = str2double(f) * 1e9;
             % lambda in mm
@@ -707,9 +707,9 @@ classdef moveGUI < matlab.apps.AppBase
                 uialert(app.UIFigure, "Error! The machine is not able to move backward enough to meet the minimum criteria.", "ERROR");
                 return
             end
-            theta = inputdlg("What is the maximum angle between the AUT normal and the probe center (in degrees)?");
+            theta = inputdlg("What is the maximum angle between the DUT normal and the probe center (in degrees)?");
             while isnan(str2double(theta)) || ~(str2double(theta) > 0)
-                theta = inputdlg("Input is not a positive number! Please enter the maximum angle between the AUT normal and the probe center (in degrees).");
+                theta = inputdlg("Input is not a positive number! Please enter the maximum angle between the DUT normal and the probe center (in degrees).");
             end
             % convert theta into radians
             app.thetaM = str2double(theta) * (pi/180);
@@ -727,21 +727,21 @@ classdef moveGUI < matlab.apps.AppBase
             % Maybe tell user "move probe up to meet criteria"
             if ~isnan(app.centerX)
                 if (app.maxX < (app.centerX + app.X/2))
-                    uialert(app.UIFigure, "Error! The AUT is too far to the machine positive Y side for given conditions! Move AUT right (facing towards machine -x axis) at least " + string(((app.centerX + app.X/2)) - app.maxX) + " mm to meet criteria!", "ERROR");
+                    uialert(app.UIFigure, "Error! The DUT is too far to the machine positive Y side for given conditions! Move DUT right (facing towards machine -x axis) at least " + string(((app.centerX + app.X/2)) - app.maxX) + " mm to meet criteria!", "ERROR");
                     return
                 end
                 if (app.minX > (app.centerX - app.X/2))
-                    uialert(app.UIFigure, "Error! The AUT is too far to the machine negative Y side for given conditions! Move AUT left (facing towards machine -x axis) at least " + string(app.minX - (app.centerX - app.X/2)) + " mm to meet criteria!", "ERROR");
+                    uialert(app.UIFigure, "Error! The DUT is too far to the machine negative Y side for given conditions! Move DUT left (facing towards machine -x axis) at least " + string(app.minX - (app.centerX - app.X/2)) + " mm to meet criteria!", "ERROR");
                 end
                 if (app.maxY < (app.centerY + app.X/2))
-                    uialert(app.UIFigure, "Error! The AUT is too high for given conditions! Move AUT down at least " + string(((app.centerY + app.X/2)) - app.maxY) + " mm to meet criteria!", "ERROR");
+                    uialert(app.UIFigure, "Error! The DUT is too high for given conditions! Move DUT down at least " + string(((app.centerY + app.X/2)) - app.maxY) + " mm to meet criteria!", "ERROR");
                     return
                 end
                 if (app.minY > (app.centerY - app.X/2))
-                    uialert(app.UIFigure, "Error! The AUT is too low for given conditions! Move AUT up at least " + string(app.minY - (app.centerY - app.X/2)) + " mm to meet criteria!", "ERROR");
+                    uialert(app.UIFigure, "Error! The DUT is too low for given conditions! Move DUT up at least " + string(app.minY - (app.centerY - app.X/2)) + " mm to meet criteria!", "ERROR");
                 end
             end
-            uialert(app.UIFigure, "The values have been determined! The distance between the probe and AUT (d) needs to be at least " + string(app.d) + " mm. " + ...
+            uialert(app.UIFigure, "The values have been determined! The distance between the probe and DUT (d) needs to be at least " + string(app.d) + " mm. " + ...
                 "Given this distance, the width of the scan area (X) needs to be " + string(app.X) + " mm, " + ...
                 "and the distance between individual points (delta x) is " + string(app.deltaX) + " mm. " + ...
                 "These values will be saved locally. Write them down for future use.", "Results", "Icon", "success");
@@ -752,9 +752,9 @@ classdef moveGUI < matlab.apps.AppBase
         function FindProbeCenterButtonPushed(app, event)
             if ~app.centerButtonPushed
                 resp = uiconfirm(app.UIFigure, "This is the centering program. " + ...
-                    "After you close this prompt, you should move the machine such that the probe is lined up with the center of the AUT. " + ...
-                    "After the AUT and probe have been centered, press the Find Probe Center button." + ...
-                    "Press Cancel to abort this process." + newline + "Note: It can be helpful to move the probe closer to the AUT.", "Centering Program");
+                    "After you close this prompt, you should move the machine such that the probe is lined up with the center of the DUT. " + ...
+                    "After the DUT and probe have been centered, press the Find Probe Center button." + ...
+                    "Press Cancel to abort this process." + newline + "Note: It can be helpful to move the probe closer to the DUT.", "Centering Program");
                 switch resp
                     case 'OK'
                         app.centerButtonPushed = true;
@@ -774,7 +774,7 @@ classdef moveGUI < matlab.apps.AppBase
                         return
                 end
             else
-                resp = uiconfirm(app.UIFigure, "Is the probe centered with the AUT?", "Confirmation", "Options", ["Yes", "No", "Cancel"], "DefaultOption", 2);
+                resp = uiconfirm(app.UIFigure, "Is the probe centered with the DUT?", "Confirmation", "Options", ["Yes", "No", "Cancel"], "DefaultOption", 2);
                 switch resp
                     case 'Yes'
                         app.centerX = app.getPos("X");
@@ -837,8 +837,8 @@ classdef moveGUI < matlab.apps.AppBase
 
         % Button pushed function: RunMeasurementButton
         function RunMeasurementButtonPushed(app, event)
-            resp = uiconfirm(app.UIFigure, "Welcome to the measurement program! The user will provide the absolute position of the Z axis for the correct distance between the AUT and the probe, " + ...
-                "the x and y positions of the center of the AUT relative to the probe, " + ...
+            resp = uiconfirm(app.UIFigure, "Welcome to the measurement program! The user will provide the absolute position of the Z axis for the correct distance between the DUT and the probe, " + ...
+                "the x and y positions of the center of the DUT relative to the probe, " + ...
                 "the total width of the scan area, " + ...
                 "and the maximum change between each scan point." + ...
                 "For each of the inputs, the user will be prompt to use the App's programs to determine these values (if the program has not already determined them)." + ...
@@ -848,16 +848,16 @@ classdef moveGUI < matlab.apps.AppBase
             end
             % check if zStart has been determined
             if isnan(app.zStart)
-                resp = uiconfirm(app.UIFigure, "It looks like the Z Position of the AUT relative to the probe has not been determined. Run Determine Z Dist program, or provide previously determined value?", "Find AUT Z Position", "Options", ["Run Program", "Input Value", "Cancel"]);
+                resp = uiconfirm(app.UIFigure, "It looks like the Z Position of the DUT relative to the probe has not been determined. Run Determine Z Dist program, or provide previously determined value?", "Find DUT Z Position", "Options", ["Run Program", "Input Value", "Cancel"]);
                 switch resp
                     case 'Run Program'
                         app.zButtonPushed = false;
                         app.DetermineZDistButtonPushed();
                         return
                     case 'Input Value'
-                        value = inputdlg("What is the absolute Z Position of the AUT relative to the probe (in mm)?", "Input Absolute Z Position of AUT");
+                        value = inputdlg("What is the absolute Z Position of the DUT relative to the probe (in mm)?", "Input Absolute Z Position of DUT");
                         while isnan(str2double(value))
-                            value = inputdlg("Input must be a number! What is the absolute Z Position of the AUT relative to the probe (in mm)?","Error; Must be Number");
+                            value = inputdlg("Input must be a number! What is the absolute Z Position of the DUT relative to the probe (in mm)?","Error; Must be Number");
                         end
                         app.zStart = str2double(value);
                     case 'Cancel'
@@ -887,33 +887,21 @@ classdef moveGUI < matlab.apps.AppBase
                         return
                 end
             end
-            % check if criteria have been determined
-            if ~app.criteria
-                resp = uiconfirm(app.UIFigure, "It looks like the sampling criteria have not been determined. Run Determine Criteria program, or input values?", "Criteria Values", "Options", ["Run Program", "Input Values", "Cancel"]);
-            else
-                resp = uiconfirm(app.UIFigure, "It looks like the sampling criteria has been determined. Current values are " + num2str(app.d) + " mm between probe and AUT, a maximum of " + num2str(app.deltaX) + " mm between each measurement point, and a total scan width of " + num2str(app.X) + " mm. Continue with current values, or manually input?", "Criteria Values", "Options", ["Continue", "Input Values", "Cancel"]);
-            end
+
+                resp = uiconfirm(app.UIFigure, "To move forward with the measurement, you will need to enter the distance between the probe and DUT during the test, the maximum spacing distance between measurements, and the scan width of the measurement.", "Criteria Values", "Options", ["Input Values", "Cancel"]);
                 switch resp
-                    case 'Run Program'
-                        app.DetermineCriteriaButtonPushed();
-                        % though the program would likely run fine without
-                        % this return here, for the sake of consistency,
-                        % return is added here
-                        return
-                    case 'Continue'
-                        % don't do anything
                     case 'Input Values'
                         % input d
-                        value = inputdlg("Input the distance between the probe and AUT in the Z Axis (d) (in mm).");
+                        value = inputdlg("Input the distance between the probe and DUT in the Z Axis (d) (in mm).");
                         checks = true;
                         while checks
                             check1 = true;
                             check2 = true;
                             while isnan(str2double(value)) || ~(str2double(value) > 0)
-                                value = inputdlg("Input must be a positive number! Input the distance between the probe and AUT in the Z Axis (d) (in mm).");
+                                value = inputdlg("Input must be a positive number! Input the distance between the probe and DUT in the Z Axis (d) (in mm).");
                                 check1 = false;
                             end
-                            % distance between AUT and minimum Z must be
+                            % distance between DUT and minimum Z must be
                             % less than available moving space
                             if str2double(value) > (app.zStart - app.minZ)
                                 value = inputdlg("Value of d is larger than machine can physcially move! Please try again.");
@@ -943,18 +931,18 @@ classdef moveGUI < matlab.apps.AppBase
                             % check to see, based on the center, if within
                             % the required area
                             if check2 && (app.maxX < (app.centerX + str2double(value)/2))
-                                uialert(app.UIFigure, "Error! The AUT is too far to the machine positive Y side for given conditions! Move AUT right (facing towards machine -x axis) at least " + string(((app.centerX + str2double(value)/2)) - app.maxX) + " mm to meet criteria!", "ERROR");
+                                uialert(app.UIFigure, "Error! The DUT is too far to the machine positive Y side for given conditions! Move DUT right (facing towards machine -x axis) at least " + string(((app.centerX + str2double(value)/2)) - app.maxX) + " mm to meet criteria!", "ERROR");
                                 return
                             end
                             if check2 && (app.minX > (app.centerX - str2double(value)/2))
-                                uialert(app.UIFigure, "Error! The AUT is too far to the machine negative Y side for given conditions! Move AUT left (facing towards machine -x axis) at least " + string(app.minX - (app.centerX - str2double(value)/2)) + " mm to meet criteria!", "ERROR");
+                                uialert(app.UIFigure, "Error! The DUT is too far to the machine negative Y side for given conditions! Move DUT left (facing towards machine -x axis) at least " + string(app.minX - (app.centerX - str2double(value)/2)) + " mm to meet criteria!", "ERROR");
                             end
                             if check2 && (app.maxY < (app.centerY + str2double(value)/2))
-                                uialert(app.UIFigure, "Error! The AUT is too high for given conditions! Move AUT down at least " + string(((app.centerY + str2double(value)/2)) - app.maxY) + " mm to meet criteria!", "ERROR");
+                                uialert(app.UIFigure, "Error! The DUT is too high for given conditions! Move DUT down at least " + string(((app.centerY + str2double(value)/2)) - app.maxY) + " mm to meet criteria!", "ERROR");
                                 return
                             end
                             if check2 && (app.minY > (app.centerY - str2double(value)/2))
-                                uialert(app.UIFigure, "Error! The AUT is too low for given conditions! Move AUT up at least " + string(app.minY - (app.centerY - str2double(value)/2)) + " mm to meet criteria!", "ERROR");
+                                uialert(app.UIFigure, "Error! The DUT is too low for given conditions! Move DUT up at least " + string(app.minY - (app.centerY - str2double(value)/2)) + " mm to meet criteria!", "ERROR");
                             end
                             
                             if(check1 & check2)
@@ -987,7 +975,6 @@ classdef moveGUI < matlab.apps.AppBase
                     case 'Cancel'
                         return
                 end
-            
             app.criteria = true;
             % all necessary variables collected! Disable other buttons
             app.FORWARDXButton.Enable = false;
@@ -1018,7 +1005,7 @@ classdef moveGUI < matlab.apps.AppBase
             command = "G90 X" + string(app.zStart - app.d) + " Y" + string(app.centerX) + " Z" + string(app.centerY);
             writeline(app.x, command);
             app.StatusTextArea.Value = "";
-            confirm = uiconfirm(app.UIFigure, "Does the probe appear to be about " + string(app.d) + " mm from the AUT?", "Confirm", "Options", ["Yes", "No"], 'DefaultOption', 2);
+            confirm = uiconfirm(app.UIFigure, "Does the probe appear to be about " + string(app.d) + " mm from the DUT?", "Confirm", "Options", ["Yes", "No"], 'DefaultOption', 2);
             if strcmp(confirm, 'No')
                 app.criteria = false;
                 app.returnMeasure();
@@ -1044,19 +1031,15 @@ classdef moveGUI < matlab.apps.AppBase
             sizeX = size(X_pos);
             rows = sizeX(1) * sizeY(1);
             sz = [rows, 3];
-            varTypes = ["double", "double", "sparameters"];
-            varNames = ["X position", "Y position", "S parameters"];
+            varTypes = ["double", "double", "struct"];
+            varNames = ["X position", "Y position", "Voltage traces"];
             paramsTable = table('Size', sz,'VariableTypes', varTypes, 'VariableNames',varNames);
             
             app.StatusTextArea.Value = "Connecting to VNA";
             % add instrument path manually
             addpath(".\instrument\");
-            % Setup pna object
-            pna = instruments.VNA.N5224A("Address", "GPIB0::16::INSTR");
-            % Make the VNA screen nice and fancy
-            pna.set("View", "Default");
-            % Set the averaging of measurements to 1 for the sake of speed
-            pna.averageCount = 1;
+            % Setup oscilloscope object
+            oscil = instruments.Oscilloscope.DSOX3034T("Address", "USB0::0x2A8D::0x1764::MY57251705::0::INSTR");
 
             tablePos = 1;
             odd = true;
@@ -1073,8 +1056,8 @@ classdef moveGUI < matlab.apps.AppBase
                     app.StatusTextArea.Value = "Progress: " + (tablePos/rows) * 100 + "%";
                     % Grab an S-Parameter Object
                     % Note that anything can go in the second parameter of the function
-                    S = pna.get("SNP", {1,2});
-                    paramsTable(tablePos, :) = {X_pos(j)-app.centerX, Y_pos(i)-app.centerY, S};
+                    v_t = oscil.get("Traces", "");
+                    paramsTable(tablePos, :) = {X_pos(j)-app.centerX, Y_pos(i)-app.centerY, v_t};
                     tablePos = tablePos + 1;
                     % if going the odd route,
                     if odd
@@ -1101,9 +1084,9 @@ classdef moveGUI < matlab.apps.AppBase
                 end
 
             end
-            Filename = sprintf('NearFieldRawData_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
+            Filename = sprintf('NearFieldRawData_Oscilloscope_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
             save(Filename, "paramsTable");
-            resp = uiconfirm(app.UIFigure, "Scanning Complete! Raw data file has been automatically saved as " + Filename +". Do you want to organize the raw data into the standard struct? The user will provide a desired frequency and create a struct with the S21 data, position for each S21 measurement, and a constant for the distance and frequency sampled from the raw data.", "Organize Data?", "Options", ["Yes", "No"]);
+            resp = uiconfirm(app.UIFigure, "Scanning Complete! Raw data file has been Automatically saved as " + Filename +". Do you want to organize the raw data into the standard struct? The user will provide a desired frequency and create a struct with the S21 data, position for each S21 measurement, and a constant for the distance and frequency sampled from the raw data.", "Organize Data?", "Options", ["Yes", "No"]);
             switch resp
                 case 'Yes'
                     app.organizeData(paramsTable);
@@ -1341,7 +1324,7 @@ classdef moveGUI < matlab.apps.AppBase
             app.DetermineZDistButton = uibutton(app.GridLayout, 'push');
             app.DetermineZDistButton.ButtonPushedFcn = createCallbackFcn(app, @DetermineZDistButtonPushed, true);
             app.DetermineZDistButton.Enable = 'off';
-            app.DetermineZDistButton.Tooltip = {'Determine the distance between the probe and the AUT.'};
+            app.DetermineZDistButton.Tooltip = {'Determine the distance between the probe and the DUT.'};
             app.DetermineZDistButton.Layout.Row = 3;
             app.DetermineZDistButton.Layout.Column = 2;
             app.DetermineZDistButton.Text = 'Determine Z Dist';
@@ -1350,6 +1333,7 @@ classdef moveGUI < matlab.apps.AppBase
             app.DetermineCriteriaButton = uibutton(app.GridLayout, 'push');
             app.DetermineCriteriaButton.ButtonPushedFcn = createCallbackFcn(app, @DetermineCriteriaButtonPushed, true);
             app.DetermineCriteriaButton.Enable = 'off';
+            app.DetermineCriteriaButton.Visible = 'off';
             app.DetermineCriteriaButton.Tooltip = {'Determine the sampling criteria for a given frequency. Recommended to run "Determine Z Dist" first.'};
             app.DetermineCriteriaButton.Layout.Row = 3;
             app.DetermineCriteriaButton.Layout.Column = 3;
@@ -1382,6 +1366,8 @@ classdef moveGUI < matlab.apps.AppBase
             % Create RawtoStructButton
             app.RawtoStructButton = uibutton(app.GridLayout, 'push');
             app.RawtoStructButton.ButtonPushedFcn = createCallbackFcn(app, @RawtoStructButtonPushed, true);
+            app.RawtoStructButton.Enable = 'off';
+            app.RawtoStructButton.Visible = 'off';
             app.RawtoStructButton.Layout.Row = 6;
             app.RawtoStructButton.Layout.Column = 5;
             app.RawtoStructButton.Text = 'Raw to Struct';
@@ -1389,6 +1375,8 @@ classdef moveGUI < matlab.apps.AppBase
             % Create StructtoPlotsButton
             app.StructtoPlotsButton = uibutton(app.GridLayout, 'push');
             app.StructtoPlotsButton.ButtonPushedFcn = createCallbackFcn(app, @StructtoPlotsButtonPushed, true);
+            app.StructtoPlotsButton.Enable = 'off';
+            app.StructtoPlotsButton.Visible = 'off';
             app.StructtoPlotsButton.Layout.Row = 7;
             app.StructtoPlotsButton.Layout.Column = 5;
             app.StructtoPlotsButton.Text = 'Struct to Plots';
@@ -1396,6 +1384,8 @@ classdef moveGUI < matlab.apps.AppBase
             % Create RawtoGatedButton
             app.RawtoGatedButton = uibutton(app.GridLayout, 'push');
             app.RawtoGatedButton.ButtonPushedFcn = createCallbackFcn(app, @RawtoGatedButtonPushed, true);
+            app.RawtoGatedButton.Enable = 'off';
+            app.RawtoGatedButton.Visible = 'off';
             app.RawtoGatedButton.Layout.Row = 8;
             app.RawtoGatedButton.Layout.Column = 5;
             app.RawtoGatedButton.Text = 'Raw to Gated';
@@ -1409,7 +1399,7 @@ classdef moveGUI < matlab.apps.AppBase
     methods (Access = public)
 
         % Construct app
-        function app = moveGUI
+        function app = moveGUI_Oscilloscope
 
             % Create UIFigure and components
             createComponents(app)
