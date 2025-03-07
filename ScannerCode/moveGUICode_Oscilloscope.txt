@@ -1089,16 +1089,8 @@ classdef moveGUI_Oscilloscope < matlab.apps.AppBase
             end
             Filename = sprintf('NearFieldRawData_Oscilloscope_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
             save(Filename, "paramsTable");
-            resp = uiconfirm(app.UIFigure, "Scanning Complete! Raw data file has been Automatically saved as " + Filename +". Do you want to organize the raw data into the standard struct? The user will provide a desired frequency and create a struct with the S21 data, position for each S21 measurement, and a constant for the distance and frequency sampled from the raw data.", "Organize Data?", "Options", ["Yes", "No"]);
-            switch resp
-                case 'Yes'
-                    app.organizeData(paramsTable);
-                    app.returnMeasure()
-                    return
-                case 'No'
-                    app.returnMeasure()
-                    return
-            end
+            uialert(app.UIFigure, "Scanning Complete! Raw data file has been Automatically saved as " + Filename +".", "Success!", "Icon", "success");
+            
             
         end
 
