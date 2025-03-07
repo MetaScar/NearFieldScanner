@@ -1034,8 +1034,11 @@ classdef moveGUI_Oscilloscope < matlab.apps.AppBase
             varTypes = ["double", "double", "struct"];
             varNames = ["X position", "Y position", "Voltage traces"];
             paramsTable = table('Size', sz,'VariableTypes', varTypes, 'VariableNames',varNames);
+            structInit = struct('time', cell(1,1), 'voltage1', cell(1,1), 'voltage2', cell(1,1));
+            structArray = transpose(arrayfun(@(x)structInit, 1:rows));
+            paramsTable.("Voltage traces") = structArray;
             
-            app.StatusTextArea.Value = "Connecting to VNA";
+            app.StatusTextArea.Value = "Connecting to Oscilloscope";
             % add instrument path manually
             addpath(".\instrument\");
             % Setup oscilloscope object
