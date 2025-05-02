@@ -1,0 +1,324 @@
+classdef TimeGateGUI < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                 matlab.ui.Figure
+        GridLayout               matlab.ui.container.GridLayout
+        FinishGatingButton       matlab.ui.control.Button
+        TimeStopEditField        matlab.ui.control.NumericEditField
+        TimeStopEditFieldLabel   matlab.ui.control.Label
+        TimeStartEditField       matlab.ui.control.NumericEditField
+        TimeStartEditFieldLabel  matlab.ui.control.Label
+        SpanEditField            matlab.ui.control.NumericEditField
+        SpanEditFieldLabel       matlab.ui.control.Label
+        CenterEditField          matlab.ui.control.NumericEditField
+        CenterEditFieldLabel     matlab.ui.control.Label
+        UIAxes2                  matlab.ui.control.UIAxes
+        UIAxes                   matlab.ui.control.UIAxes
+    end
+
+    
+    properties (Access = private)
+        mainApp % the app variable from the main app
+        rawData % the raw data selected by the user to examine in time
+        time % time :)
+        freq % frequency <:)
+        s21 % The s21 data from rawData
+        lengthS % Description
+    end
+    
+    methods (Access = private)
+        
+        function extractS(app)
+            % Sdata data
+            s = table2array(app.rawData(:,3));
+            app.freq = s(1).Frequencies;
+            s_length = length(s);
+            app.lengthS = s_length;
+            f_length = length(app.freq);
+
+            app.s21 = NaN(s_length,f_length);
+            for i = 1:s_length
+                app.s21(i,:) = rfparam(s(i),2,1);
+            end
+
+            % create time
+            fs = app.freq(2) - app.freq(1);
+            T = 1/fs;
+            app.time = linspace(-T/2,T/2,f_length);
+        end
+        
+        function results = db(app, input)
+            results = 20*log10(abs(input));
+        end
+        
+        function index = find_nearest_index(app, x, num)
+            [~,index] = min(abs(x-num));
+        end
+        
+        function gateAndPlot(app)
+            center = app.CenterEditField.Value * 1e-9;
+            span = app.SpanEditField.Value * 1e-9;
+            start = center - (span/2);
+            stop = center + (span/2);
+            start_id = app.find_nearest_index(app.time, start);
+            stop_id = app.find_nearest_index(app.time, stop);
+            window_width = abs(start_id-stop_id)+1;
+            window = kaiser(window_width, 6);
+
+            gate = zeros(length(app.freq), 1);
+            gate(start_id:stop_id) = window;
+
+
+            % find the center of the s21 matrix
+            x = table2array(app.rawData(:,1));
+            y = table2array(app.rawData(:,2));
+            [~, indexX] = min(abs(x-0));
+            [~, indexY] = min(abs(y-0));
+            centerX = x(indexX);
+            centerY = y(indexY);
+
+            for i = 1:length(x)
+                if x(i) == centerX & y(i) == centerY
+                    s1 = transpose(app.s21(i,:));
+                end
+            end
+
+            s1_time = fftshift(ifft(s1)) * length(s1);
+            s1_gated = s1_time .* gate;
+            S1_gated = fft(fftshift(s1_gated)) / length(s1);
+
+            plot(app.UIAxes, app.freq, app.db(s1), 'DisplayName', 'Ungated');
+            hold(app.UIAxes, "on")
+            plot(app.UIAxes, app.freq, app.db(S1_gated), 'DisplayName', 'Gated');
+            xlim(app.UIAxes, [app.freq(1) app.freq(end)]);
+            hold(app.UIAxes, "off")
+            legend(app.UIAxes, 'Location', 'Best')
+            grid(app.UIAxes, "on");
+
+            plot(app.UIAxes2, app.time*1e9, app.db(s1_time), 'DisplayName', 'Ungated');
+            hold(app.UIAxes2, 'on')
+            plot(app.UIAxes2, app.time*1e9, app.db(s1_gated), 'DisplayName', 'Gated');
+            xlim(app.UIAxes2, [app.TimeStartEditField.Value, app.TimeStopEditField.Value])
+            hold(app.UIAxes2, 'off')
+            legend(app.UIAxes2, 'Location', 'Best')
+            grid(app.UIAxes2, "on");
+            drawnow
+        end
+        
+        function gateRaw(app)
+            center = app.CenterEditField.Value * 1e-9;
+            span = app.SpanEditField.Value * 1e-9;
+            s_length = app.lengthS;
+            f_length = length(app.freq);
+
+            start = center - (span/2);
+            stop = center + (span/2);
+            start_id = app.find_nearest_index(app.time, start);
+            stop_id = app.find_nearest_index(app.time, stop);
+            window_width = abs(start_id-stop_id)+1;
+            window = kaiser(window_width, 6);
+
+            gate = zeros(f_length, 1);
+            gate(start_id:stop_id) = window;
+
+            % IFFT to time, gate, and return to freq with FFT
+            s21_gated = NaN(s_length,f_length);
+            for i = 1:s_length
+                s21_time = fftshift(ifft(app.s21(i,:))) * s_length;
+                s21_Tgated = transpose(s21_time) .* gate;
+                s21_gated(i,:) = fft(fftshift(s21_Tgated)) / s_length;
+            end
+
+            % create matrix for s21 to fit in 21 spot and create s param
+            s21_params = sparameters.empty(0);
+            for i = 1:s_length
+                tmpMatrix = NaN([2,2,f_length]);
+                tmpMatrix(2,1,:) = s21_gated(i,:);
+                s21_params(i) = sparameters(tmpMatrix, app.freq);
+            end
+
+            paramsTable = app.rawData;
+            paramsTable(:,3) = array2table(transpose(s21_params));
+            Filename = sprintf('NearFieldGatedData_%s.mat', datetime('now','TimeZone','local','Format','yyyy-MM-dd_HH-mm'));
+            save(Filename, 'paramsTable');
+            uialert(app.UIFigure, "The Raw data has been gated! It has been saved to the file " + Filename + ".", "File Saved", 'Icon', 'success');
+        end
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app, mainapp, rawdata)
+            app.mainApp = mainapp;
+            app.rawData = rawdata;
+
+            app.extractS();
+
+            app.gateAndPlot();
+            uialert(app.UIFigure, "Modify Center and Span inputs to modify the gate properties, and modify Time Start and Stop inputs to modify the time span seen in the time domain. Press Finish Gating when finished gating.", "Basic Instructions", "Icon", "info");
+
+        end
+
+        % Value changed function: CenterEditField, SpanEditField, 
+        % ...and 2 other components
+        function CenterEditFieldValueChanged(app, event)
+            app.gateAndPlot();
+            
+        end
+
+        % Button pushed function: FinishGatingButton
+        function FinishGatingButtonPushed(app, event)
+            resp = uiconfirm(app.UIFigure, "Has the gating been completed?", "Confirm Gating", "Options", ["Yes", "No"]);
+            switch resp
+                case 'Yes'
+                    app.gateRaw();
+                    app.UIFigureCloseRequest();
+                case 'No'
+                    return;
+            end
+        end
+
+        % Close request function: UIFigure
+        function UIFigureCloseRequest(app, event)
+            delete(app)
+            
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 691 305];
+            app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
+
+            % Create GridLayout
+            app.GridLayout = uigridlayout(app.UIFigure);
+            app.GridLayout.ColumnWidth = {'1x', '1x', '1x', '1x', '1x', '1x', '1x', '1x', '1x', '1x'};
+            app.GridLayout.RowHeight = {'1x', '1x', '1x', '1x', '1x'};
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.GridLayout);
+            title(app.UIAxes, 'Frequency Plot')
+            xlabel(app.UIAxes, 'Frequency (GHz)')
+            ylabel(app.UIAxes, 'Magnitude (dB)')
+            zlabel(app.UIAxes, 'Z')
+            app.UIAxes.Layout.Row = [1 4];
+            app.UIAxes.Layout.Column = [1 5];
+
+            % Create UIAxes2
+            app.UIAxes2 = uiaxes(app.GridLayout);
+            title(app.UIAxes2, 'Time Plot')
+            xlabel(app.UIAxes2, 'Time (ns)')
+            ylabel(app.UIAxes2, 'Magnitude (dB)')
+            zlabel(app.UIAxes2, 'Z')
+            app.UIAxes2.Layout.Row = [1 4];
+            app.UIAxes2.Layout.Column = [6 10];
+
+            % Create CenterEditFieldLabel
+            app.CenterEditFieldLabel = uilabel(app.GridLayout);
+            app.CenterEditFieldLabel.HorizontalAlignment = 'center';
+            app.CenterEditFieldLabel.Layout.Row = 5;
+            app.CenterEditFieldLabel.Layout.Column = 1;
+            app.CenterEditFieldLabel.Text = 'Center';
+
+            % Create CenterEditField
+            app.CenterEditField = uieditfield(app.GridLayout, 'numeric');
+            app.CenterEditField.ValueChangedFcn = createCallbackFcn(app, @CenterEditFieldValueChanged, true);
+            app.CenterEditField.HorizontalAlignment = 'center';
+            app.CenterEditField.Layout.Row = 5;
+            app.CenterEditField.Layout.Column = 2;
+
+            % Create SpanEditFieldLabel
+            app.SpanEditFieldLabel = uilabel(app.GridLayout);
+            app.SpanEditFieldLabel.HorizontalAlignment = 'center';
+            app.SpanEditFieldLabel.Layout.Row = 5;
+            app.SpanEditFieldLabel.Layout.Column = 3;
+            app.SpanEditFieldLabel.Text = 'Span';
+
+            % Create SpanEditField
+            app.SpanEditField = uieditfield(app.GridLayout, 'numeric');
+            app.SpanEditField.ValueChangedFcn = createCallbackFcn(app, @CenterEditFieldValueChanged, true);
+            app.SpanEditField.HorizontalAlignment = 'center';
+            app.SpanEditField.Layout.Row = 5;
+            app.SpanEditField.Layout.Column = 4;
+            app.SpanEditField.Value = 5;
+
+            % Create TimeStartEditFieldLabel
+            app.TimeStartEditFieldLabel = uilabel(app.GridLayout);
+            app.TimeStartEditFieldLabel.HorizontalAlignment = 'center';
+            app.TimeStartEditFieldLabel.Layout.Row = 5;
+            app.TimeStartEditFieldLabel.Layout.Column = 5;
+            app.TimeStartEditFieldLabel.Text = 'Time Start';
+
+            % Create TimeStartEditField
+            app.TimeStartEditField = uieditfield(app.GridLayout, 'numeric');
+            app.TimeStartEditField.ValueChangedFcn = createCallbackFcn(app, @CenterEditFieldValueChanged, true);
+            app.TimeStartEditField.HorizontalAlignment = 'center';
+            app.TimeStartEditField.Layout.Row = 5;
+            app.TimeStartEditField.Layout.Column = 6;
+            app.TimeStartEditField.Value = -30;
+
+            % Create TimeStopEditFieldLabel
+            app.TimeStopEditFieldLabel = uilabel(app.GridLayout);
+            app.TimeStopEditFieldLabel.HorizontalAlignment = 'center';
+            app.TimeStopEditFieldLabel.Layout.Row = 5;
+            app.TimeStopEditFieldLabel.Layout.Column = 7;
+            app.TimeStopEditFieldLabel.Text = 'Time Stop';
+
+            % Create TimeStopEditField
+            app.TimeStopEditField = uieditfield(app.GridLayout, 'numeric');
+            app.TimeStopEditField.ValueChangedFcn = createCallbackFcn(app, @CenterEditFieldValueChanged, true);
+            app.TimeStopEditField.HorizontalAlignment = 'center';
+            app.TimeStopEditField.Layout.Row = 5;
+            app.TimeStopEditField.Layout.Column = 8;
+            app.TimeStopEditField.Value = 30;
+
+            % Create FinishGatingButton
+            app.FinishGatingButton = uibutton(app.GridLayout, 'push');
+            app.FinishGatingButton.ButtonPushedFcn = createCallbackFcn(app, @FinishGatingButtonPushed, true);
+            app.FinishGatingButton.Layout.Row = 5;
+            app.FinishGatingButton.Layout.Column = [9 10];
+            app.FinishGatingButton.Text = 'Finish Gating';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = TimeGateGUI(varargin)
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            % Execute the startup function
+            runStartupFcn(app, @(app)startupFcn(app, varargin{:}))
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
