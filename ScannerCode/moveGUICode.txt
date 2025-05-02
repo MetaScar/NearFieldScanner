@@ -574,7 +574,7 @@ classdef moveGUI < matlab.apps.AppBase
 
         % Button pushed function: ProbeMaintenanceButton
         function ProbeMaintenanceButtonPushed(app, event)
-            command = "G90 X-898.8 Y-106.8 Z-477.2";
+            command = "G90 X-898.8 Y-811.8 Z-477.2";
             writeline(app.x, command);
         end
 
