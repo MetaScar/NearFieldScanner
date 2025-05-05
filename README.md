@@ -11,7 +11,6 @@ Because this guide is not exhaustive and perfect, if you think something is stup
 4. Inside Matlab, open `moveGUI.mlapp`. This is the Matlab app where the near-field scanner is controlled from.
 5. The Matlab App Designer should have opened. Start the app by pressing the green play button up in the top left.
 6. The app should be started. Now, plug in the Arduino Uno USB into the computer running the Matlab app and the <insert power block> into an outlet. If either does not seem to recieve power after plugging in, ensure the Arduino USB is connected to the USB-B port on the Arduino, and that the barrel connector is plugged into the PCB.
-<insert images>
 7. If you have not already, clear the space in and around the near-field scanner. It is about to start moving, so you don't want it to run into anything. Also, it is advised to unplug the probe and the AUT from the VNA, as future steps might cause electrical connections between the ports. Feel free to maintain the connection between the cable and the AUT/probe.
 8. In the App, press the "Initialize" button in the top right. This will begin homing the machine.
 9. Once the homing is completed and you have confirmed the completion, if this is the first time testing with the AUT positioned as it is now, you will need to run "Determine Z Dist" and "Find Probe Center". These will tell the program where the AUT is. If this has already been completed for the current setup, skip to step 12.
