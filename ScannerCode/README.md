@@ -1,4 +1,4 @@
-Code related to or used by Professor Scarborough's Planar Near-Field Scanner. Majority of design and code created by Jacob Stewart. To communicate with a Keysight VNA, the code located in the "instrument" folder was created by Pual Flaten and Joel Johnson. Thank you for the code nerds!
+Code related to or used by Professor Scarborough's Planar Near-Field Scanner. Majority of design and code created by Jacob Stewart. To communicate with a Keysight VNA, the code located in the "instrument" folder was created by Paul Flaten and Joel Johnson. Thank you for the code nerds!
 
 # Quickstart
 This quickstart guide is assuming you are trying to run the near-field scanner. This quickstart guide also assumes the user has arranged the antenna the user is testing (the AUT), and that the desired probe is installed. There is other code included in this repo that is used for just post processing the data located in the `./PostProcessing` directory. Hopefully, in a future version of the code, all post processing can be completed within the Matlab app. 
