@@ -15,7 +15,6 @@ Because this guide is not exhaustive and perfect, if you think something is stup
 8. In the App, press the "Initialize" button in the top right. This will begin homing the machine.
 9. Once the homing is completed and you have confirmed the completion, if this is the first time testing with the AUT positioned as it is now, you will need to run "Determine Z Dist" and "Find Probe Center". These will tell the program where the AUT is. If this has already been completed for the current setup, skip to step 12.
 10. Click "Determine Z Dist". Follow the program, and use the controls to put the probe close to the AUT, and use a caliper to measure the physical distance between the probe and AUT. Write down the value provided by the program.
-<insert image>
 11. At the completion of "Determine Z Dist", you will be prompted to run "Find Probe Center". Go for it. Using the same controls, position the probe as close as possible to the center of the AUT. Write down the values provided by the program.
 12. If you want the program to calculate the sampling criteria for a measurement, select "Determine Criteria". If you already have the criteria, skip this step.
 13. Once you are ready to begin measuring, plug in the probe and AUT to the VNA.
