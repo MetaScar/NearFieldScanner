@@ -4,6 +4,8 @@ title: "Low Cost Planar Near-Field Scanner"
 authors:
   - family-names: Stewart
     given-names: Jacob
+  - family-names: Scarborough
+    given-names: Cody
   - family-names: Johnson
     given-names: Joel
   - family-names: Flaten
@@ -12,5 +14,5 @@ identifiers:
   - type: url
     value: https://github.com/MetaScar/NearFieldScanner
 license: Apache-2.0
-version: 1.0.0
-date-released: 2025-05-05
+version: 1.0.1
+date-released: 2025-05-19
