@@ -244,6 +244,7 @@ classdef N5224A < handle
 
             % Retrieve data
             this.connect();
+            this.send("DISP:ENAB 0"); % disable the display to speed up measurements
             this.send( "TRIG:SOUR IMM");    % trigger only once
             this.send("SENS:SWE:MODE GRO"); % not sure; seems to allow multiple triggers
             this.waitTillOpComplete;
