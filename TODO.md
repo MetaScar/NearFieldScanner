@@ -11,3 +11,4 @@
 - Add built in far field transforms
 - Add probe compensation option
 - Add probe compensation back to near field option
+- Add an option (if the connection to Arduino fails) to type in the COM number of Arduino (COM3, COM6, etc.)
