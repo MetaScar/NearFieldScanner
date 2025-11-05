@@ -4,7 +4,7 @@ c=physconst('LightSpeed');
 
 %% Parameters
 % extraction file
-fname='./Data/NearFieldRawData_2025-06-17_17-37.mat';
+fname='./Data/Example_Narda_Horn_Data.mat';
 % extraction frequency
 f_exe_GHz=10;
 % windowing parameters
