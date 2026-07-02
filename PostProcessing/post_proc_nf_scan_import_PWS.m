@@ -1,0 +1,400 @@
+%% Logistics
+clear all
+c=physconst('LightSpeed');
+
+%% Parameters
+% extraction file
+fname='./Data/NearFieldStructData_2.4GHz_2026-06-29_15-29.mat';
+% extraction frequency
+f0_GHz=2.4; f_m_GHz=1; Nhp=1;
+% windowing parameters
+perform_time_gate=true;
+r_st=0.0; r_en=1.6; r_sigma=0.02;
+% Interpolation
+N1q=40; Nq=2*N1q+1; pad_len_mm=0;
+% Waveguide Probe Size
+a_WG=22.86e-3; b_WG=10.16e-3;
+% Radiation Pattern Cuts
+phi_cuts_deg=0:45:90;
+
+%% Extraction - NF Scanner
+load(fname);
+fvec_GHz=abs(f0_GHz+(-Nhp:Nhp).*f_m_GHz);
+stru=tempStructy;
+ch1_t=stru.CH1;
+Nt=size(ch1_t,1);
+win=hann(Nt,'periodic');
+ch1_fft=fft(win.*ch1_t);
+dt=stru.dt(1);
+df=1/(Nt*dt);
+f_samp=df.*(0:Nt/2); Nf=length(f_samp); f_samp_GHz=f_samp./1e9;
+ch1_fft=ch1_fft(1:Nf,:);
+% Fixme - incorp interpolation in freq domain
+% ch1fqtmp=interp1(f_samp_GHz,ch1_fft,linspace(2,3,201),'cubic');
+% ch1fq=interp1(f_samp_GHz,ch1_fft,fvec_GHz,'cubic');
+[~,f_proc_ind]=min(abs(f_samp_GHz-f0_GHz));
+Vf_unsort=ch1_fft(f_proc_ind,:);
+
+Xe=(stru.x).*1e-3;
+Ye=(stru.y).*1e-3;
+Np=length(Xe); N1=sqrt(Np); N1p=(N1-1)/2;
+dx=Xe(2)-Xe(1);
+xv=dx.*(-N1p:N1p);
+[Xm,Ym]=ndgrid(xv,xv); X=Xm(:); Y=Ym(:);
+lame=c/f0_GHz/1e9;
+
+%% Resort due to Raster Scan
+Vf=zeros(N1,N1); % FIXME: Vf=zeros(N1,N1,Nf);
+for row=1:N1
+    for col=1:N1
+        extraction_idx=(row-1)*N1+mod(row,2)*(N1+1)+(-1)^(row)*col;
+        Vf(row,col)=Vf_unsort(extraction_idx);
+    end
+end
+
+%% Interpolation
+[Vfq,Xq,Yq]=interp_amp_phase(Vf,xv,Nq,pad_len_mm*1e-3);
+Rhom=sqrt(Xq.^2+Yq.^2);
+
+
+%% Convert to Spatial Frequency Domain (With Spatial Zero Padding)
+Ns=Nq;
+% nu_max=1/2/dx; % Inherently assumes zero padding
+nu_max=1/lame*1.01;
+nuv=linspace(-nu_max,nu_max,Ns);
+[Nux,Nuy]=ndgrid(nuv,nuv);
+Vk=zeros(Ns,Ns);
+Vk(:)=sum(Vfq(:).*exp(1j.*2.*pi.*(Nux(:).'.*Xq(:)+Nuy(:).'.*Yq(:))));
+
+%% Extract Probe Fields
+load('Epx.mat')
+Rhope=sqrt(Xpe.^2+Ype.^2); maxXpe=max(Xpe(:));
+WindowXY=sinc(Rhope./maxXpe).*(Rhope<maxXpe);
+Epxk=zeros(Ns,Ns);
+Epxk(:)=sum(Epx(:).*WindowXY(:).*exp(1j.*2.*pi.*(Nux(:).'.*Xpe(:)+Nuy(:).'.*Ype(:))));
+
+Epxk=Epxk./max(abs(Epxk(:)));
+
+%% Perform Probe Compensation
+nu0=1/lame;
+Nuz=sqrt(nu0.^2-Nux.^2-Nuy.^2);
+% F_probe=(sinc(Nux.*a_WG-0.5)+sinc(Nux.*a_WG+0.5)).*sinc(Nuy.*b_WG);
+F_probe=Epxk;
+Eyk_probe_comp=Vk./(Nuz./nu0.*F_probe.*(1+Nuy.^2./Nuz.^2));
+Eyk_probe_comp=Vk./(Nuz./nu0.*F_probe.*(1+Nux.^2./Nuz.^2)); %FIXME - naming convention
+Nu_rho=sqrt(Nux(:).^2+Nuy(:).^2);
+Eyk=Eyk_probe_comp; Eyk(Nu_rho./nu0>1)=0;
+Eyk=Eyk./max(abs(Eyk(:)));
+
+%% Compute Far-Field Radiation Pattern along cuts
+Eff=Nuz./nu0.*Eyk; Eff=Eff./max(abs(Eff(:)));
+phi_c=phi_cuts_deg.*pi./180;
+th_c=linspace(-pi/2,pi/2,201).';
+kxn_c=sin(th_c).*cos(phi_c);
+kyn_c=sin(th_c).*sin(phi_c);
+Eff_c=interp2(Nux.'./nu0,Nuy.'./nu0,Eff.',kxn_c,kyn_c);
+
+
+%% Convert Back to Spatial Domain (With Spectral Zero Padding)
+Nr=Nq;
+xrv=linspace(xv(1),xv(end),Nr);
+[Xr,Yr]=ndgrid(xrv,xrv);
+Eyr_idft=zeros(Nr,Nr);
+Eyr_idft(:)=sum(Eyk(:).*exp(-1j.*2.*pi.*(Nux(:).*Xr(:).'+Nuy(:).*Yr(:).')));
+Eyr=Eyr_idft./max(abs(Eyr_idft(:)));
+
+%% Plotting Logistics (restart matlab to go back to default settings)
+fig_cnt=0;
+set(groot,'defaultTextInterpreter','latex')
+set(groot, 'defaultAxesTickLabelInterpreter','latex');
+set(groot, 'defaultLegendInterpreter','latex');
+set(groot,'defaultAxesFontSize',16)
+set(groot,'defaultLineLineWidth', 1.2);
+format compact
+
+%% Plotting Spatial / Spectral Phase / Amplitude
+fig_cnt=fig_cnt+1; figure(fig_cnt); clf(fig_cnt); hold on
+
+% Spatial Magnitude
+ax1=subplot(3,2,1);
+imagesc(xrv.*100,xrv.*100,20.*log10(abs(Eyr.')))
+colormap(ax1,'parula');
+clim([-20,0]); xlim(xrv([1,end]).*100); ylim(xrv([1,end]).*100);
+title('$|E_y (\vec{r})|$ (dB)')
+axis square
+xlabel('$x$ (cm)');
+ylabel('$y$ (cm)');
+colorbar
+
+% Spatial Phase
+ax2=subplot(3,2,2);
+imagesc(xrv.*100,xrv.*100,angle(Eyr.').*180./pi)
+colormap(ax2,'hsv');
+clim([-180,180]); xlim(xrv([1,end]).*100); ylim(xrv([1,end]).*100);
+title('$\angle E_y (\vec{r})$ (deg)')
+axis square
+xlabel('$x$ (cm)');
+ylabel('$y$ (cm)');
+cb=colorbar;
+cb.Ticks=-180:90:180;
+
+% Spectral Magnitude
+ax3=subplot(3,2,3);
+imagesc(nuv./nu0,nuv./nu0,20.*log10(abs(Eyk.')))
+colormap(ax3,'parula')
+clim([-20,0]); xlim([-1,1]); ylim([-1,1]);
+rectangle('Position',[-1,-1,2,2],'Curvature',[1,1],'EdgeColor','w')
+title('$|\tilde{E}_y (\vec{k})|$ (dB)')
+axis square
+xlabel('$k_x / k_0$');
+ylabel('$k_y / k_0$');
+colorbar
+
+% Spectral Phase
+ax4=subplot(3,2,4);
+imagesc(nuv./nu0,nuv./nu0,angle(Eyk.').*180./pi)
+colormap(ax4,'hsv')
+clim([-180,180]); xlim([-1,1]); ylim([-1,1]);
+rectangle('Position',[-1,-1,2,2],'Curvature',[1,1],'EdgeColor','k')
+title('$\angle \tilde{E}_y (\vec{k})$ (deg)')
+axis square
+xlabel('$k_x / k_0$');
+ylabel('$k_y / k_0$');
+cb=colorbar;
+cb.Ticks=-180:90:180;
+
+% Spectral Magnitude
+ax3=subplot(3,2,5);
+imagesc(nuv./nu0,nuv./nu0,20.*log10(abs(Epxk.')))
+colormap(ax3,'parula')
+clim([-20,0]); xlim([-1,1]); ylim([-1,1]);
+rectangle('Position',[-1,-1,2,2],'Curvature',[1,1],'EdgeColor','w')
+title('$|\tilde{E}_y (\vec{k})|$ (dB)')
+axis square
+xlabel('$k_x / k_0$');
+ylabel('$k_y / k_0$');
+colorbar
+
+% Spectral Phase
+ax4=subplot(3,2,6);
+imagesc(nuv./nu0,nuv./nu0,angle(Epxk.').*180./pi)
+colormap(ax4,'hsv')
+clim([-180,180]); xlim([-1,1]); ylim([-1,1]);
+rectangle('Position',[-1,-1,2,2],'Curvature',[1,1],'EdgeColor','k')
+title('$\angle \tilde{E}_y (\vec{k})$ (deg)')
+axis square
+xlabel('$k_x / k_0$');
+ylabel('$k_y / k_0$');
+cb=colorbar;
+cb.Ticks=-180:90:180;
+
+%% Plotting - Spatial Field Cuts
+Z_cuts=-0.3:0.1:.5;
+xylim=0.25;
+rot_cut_deg=0.*180./pi; mindB=-20; swapXandZ=true; plot_coarse_cuts=true;
+plot_phase=false; phase_pol=[0,1];
+Nxy=45;
+
+fig_cnt=fig_cnt+1; figure(fig_cnt); clf(fig_cnt); hold on
+f_plot_spatial_cuts(Nxy,Z_cuts,xylim,2.*pi.*Nux,2.*pi.*Nuy,0.*Eyk(:),Eyk(:),2*pi*nu0,rot_cut_deg,mindB,0,swapXandZ,plot_coarse_cuts,false,phase_pol,fig_cnt)
+xlim(Z_cuts([1,end]))
+ylim([-1,1].*xylim);
+zlim([-1,1].*xylim);
+axis equal
+view([140 20])
+
+fig_cnt=fig_cnt+1; figure(fig_cnt); clf(fig_cnt); hold on
+f_plot_spatial_cuts(Nxy,Z_cuts,xylim,2.*pi.*Nux,2.*pi.*Nuy,0.*Eyk(:),Eyk(:),2*pi*nu0,rot_cut_deg,mindB,0,swapXandZ,plot_coarse_cuts,true,phase_pol,fig_cnt)
+xlim(Z_cuts([1,end]))
+ylim([-1,1].*xylim);
+zlim([-1,1].*xylim);
+axis equal
+view([140 20])
+
+
+%% Plotting - Baloon Pattern
+fig_cnt=fig_cnt+1; figure(fig_cnt); clf(fig_cnt); hold on
+mindB=-40;
+f_plot_baloon_pattern(0.*Eyk,Eyk,Nux./nu0,Nuy./nu0,mindB,fig_cnt)
+
+%% Plotting - Radiation Cuts
+fig_cnt=fig_cnt+1; figure(fig_cnt); clf(fig_cnt); hold on
+for nc=1:length(phi_c)
+    plot(th_c.*180./pi,20.*log10(abs(Eff_c(:,nc))))
+    grid on
+    xlabel('Elevation Angle (deg)')
+    ylabel('Normalized Radiation (dB)')
+    ylim([-40,0])
+    xlim([-1,1].*90)
+    xticks(-90:30:90)
+    legend_str{nc}=sprintf('$\\phi = %0.1f ^\\circ$',phi_c(nc)*180/pi);
+end
+legend(legend_str)
+
+%% Functions - Window
+function f_wind=window_sigmoid(r,r_st,r_en,r_sigma)
+    f_wind=(1+exp(-(r-r_st)./r_sigma)).^-1-(1+exp(-(r-r_en)./r_sigma)).^-1;
+end
+
+%% Function - Baloon Plot
+function f_plot_baloon_pattern(Exk,Eyk,kxn,kyn,mindB,fig_num)
+    krn=sqrt(kxn.^2+kyn.^2); kzn=sqrt(1-krn).^2.*(krn<1);
+    E_mag_k=sqrt(abs(Exk).^2+abs(Eyk).^2);
+    Field_Pattern=kzn.*E_mag_k;
+    FFb=abs(Field_Pattern./max(max(abs(Field_Pattern)))).';
+    Rb=max((20.*log10(FFb)-mindB)./abs(mindB),0);
+    Xb=kxn.'.*Rb; Yb=kyn.'.*Rb; Zb=kzn.'.*Rb;
+    figure(fig_num); clf(fig_num); hold on;
+    jet_map=colormap("jet");
+    baloon_scaled_colordata=ceil(Rb*length(jet_map).*.99);
+    srf=surf(Xb,Yb,Zb,'LineStyle','none');
+    srf.CData=baloon_scaled_colordata;
+    colormap jet
+    cb=colorbar; cbv=0:0.2:1;
+    cb.Ticks=(length(jet_map)-2).*cbv;
+    cb.TickLabels=num2str(mindB.*(1-cbv.'));
+    cb.Label.String='P_{rad}';
+    set(gca,'YDir','normal')
+    grid off
+    ax=gca; ax.XTickLabel=[]; ax.YTickLabel=[]; ax.ZTickLabel=[];
+    ax.Color='none';
+    ax.XAxis.Visible='off'; ax.YAxis.Visible='off'; ax.ZAxis.Visible='off';
+    view([45,30]); axis equal; rotate3d on
+end
+
+%% Function Spatial Cuts Plotting
+function f_plot_spatial_cuts(Nxyp,Z_cuts,xylim,KX,KY,E_x_k,E_y_k,k0,rot_cut_deg,mindB,maxdB,swapXandZ,plot_coarse_cuts,plot_phase,phase_pol,fig_num)
+    % Post Proc Input
+    Nxy=2*Nxyp+1;
+    KT=sqrt(KX.^2+KY.^2);
+    KZ=-1j.*sqrt(KT.^2-k0.^2);
+    % Spatial Grid
+    zf=linspace(Z_cuts(1),Z_cuts(end),501);
+    if plot_coarse_cuts
+        zc=Z_cuts;
+    else
+        zc=linspace(Z_cuts(1),Z_cuts(end),51);
+    end
+    cr=cosd(rot_cut_deg); sr=sind(rot_cut_deg);
+    xf=linspace(-xylim,xylim,Nxy);
+    yf=linspace(-xylim,xylim,Nxy);
+    % Compute PW Spectrum for all Z
+    E_x_k_allZ=E_x_k(:).*exp(-1j.*KZ(:).*zf);
+    E_y_k_allZ=E_y_k(:).*exp(-1j.*KZ(:).*zf);
+    E_x_k_coarseZ=E_x_k(:).*exp(-1j.*KZ(:).*zc);
+    E_y_k_coarseZ=E_y_k(:).*exp(-1j.*KZ(:).*zc);
+    % XZ Plane
+    [Xpxz,Zxz]=meshgrid(xf,zf);
+    E_x_xz=exp(-1j.*(xf.'.*(cr.*KX(:).'+sr.*KY(:).')))*E_x_k_allZ;
+    E_y_xz=exp(-1j.*(xf.'.*(cr.*KX(:).'+sr.*KY(:).')))*E_y_k_allZ;
+    E_mag_xz=sqrt(abs(E_x_xz).^2+abs(E_y_xz).^2);
+    % YZ Plane
+    [Yyz,Zyz]=meshgrid(xf,zf);
+    E_x_yz=exp(-1j.*(yf.'.*(cr.*KY(:).'-sr.*KX(:).')))*E_x_k_allZ;
+    E_y_yz=exp(-1j.*(yf.'.*(cr.*KY(:).'-sr.*KX(:).')))*E_y_k_allZ;
+    E_mag_yz=sqrt(abs(E_x_yz).^2+abs(E_y_yz).^2);
+    % XY Cuts
+    [Xxy,Yxy]=meshgrid(xf,yf);
+    dx=xf(2)-xf(1);
+    Numax=1/dx/2;
+    Nuv=linspace(-Numax,Numax,Nxy);
+    [Nux,Nuy]=ndgrid(Nuv,Nuv);
+    E_x_xy=zeros(Nxy,Nxy,length(zc));
+    E_y_xy=zeros(Nxy,Nxy,length(zc));
+    for zci=1:length(zc)
+        Exnu=interp2(KX.'./(2*pi),KY.'./(2*pi),reshape(E_x_k_coarseZ(:,zci),size(KX)).',Nux.',Nuy.','makima',0).';
+        Eynu=interp2(KX.'./(2*pi),KY.'./(2*pi),reshape(E_y_k_coarseZ(:,zci),size(KX)).',Nux.',Nuy.','makima',0).';
+        E_x_xy(:,:,zci)=f_spectral2space(Exnu).*2.*pi;
+        E_y_xy(:,:,zci)=f_spectral2space(Eynu).*2.*pi;
+    end
+    E_mag_xy=sqrt(abs(E_x_xy).^2+abs(E_y_xy).^2);
+    % Convert to RGB Images
+    maxval=max([E_mag_xz(:);E_mag_yz(:);E_mag_xy(:)]);
+    E_mag_xz_dB=max(20.*log10(E_mag_xz./maxval),mindB);
+    E_mag_yz_dB=max(20.*log10(E_mag_yz./maxval),mindB);
+    E_mag_xy_dB=max(20.*log10(E_mag_xy./maxval),mindB);
+    [rgb_image_XZ,Scl_Im_XZ]=cmap_scaled_rgb('jet',E_mag_xz_dB.',mindB,maxdB);
+    [rgb_image_YZ,Scl_Im_YZ]=cmap_scaled_rgb('jet',E_mag_yz_dB.',mindB,maxdB);
+    if plot_phase
+        E_copol_xz=E_x_xz*conj(phase_pol(1))+E_y_xz*conj(phase_pol(2));
+        E_copol_yz=E_x_yz*conj(phase_pol(1))+E_y_yz*conj(phase_pol(2));
+        [rgb_image_XZ,~]=cmap_scaled_rgb('hsv',180./pi.*angle(E_copol_xz).',-180,180);
+        [rgb_image_YZ,~]=cmap_scaled_rgb('hsv',180./pi.*angle(E_copol_yz).',-180,180);
+    end
+    rgb_image_XY=zeros(Nxy,Nxy,3,length(zc));
+    Scl_Im_XY=zeros(Nxy,Nxy,length(zc));
+    for zci=1:length(zc)
+        [rgb_tmp,scl_tmp]=cmap_scaled_rgb('jet',E_mag_xy_dB(:,:,zci).',mindB,maxdB);
+        rgb_image_XY(:,:,:,zci)=rgb_tmp; Scl_Im_XY(:,:,zci)=scl_tmp;
+    end
+    % Build Plot
+    figure(fig_num); clf(fig_num)
+    hold on
+    if plot_coarse_cuts
+        if swapXandZ
+            wxz=warp(Zxz,cr.*Xpxz,sr.*Xpxz,rgb_image_XZ);
+        else
+            wxz=warp(cr.*Xpxz,sr.*Xpxz,Zxz,rgb_image_XZ);
+        end
+        wxz.FaceAlpha='texturemap'; wxz.AlphaDataMapping='none';
+        wxz.AlphaData=(Scl_Im_XZ).^0.25;
+        if swapXandZ
+            wyz=warp(Zyz,-sr.*Yyz,cr.*Yyz,rgb_image_YZ);
+        else
+            wyz=warp(-sr.*Yyz,cr.*Yyz,Zyz,rgb_image_YZ);
+        end
+        wyz.FaceAlpha='texturemap'; wyz.AlphaDataMapping='none';
+        wyz.AlphaData=(Scl_Im_YZ).^0.25;
+    end
+    for zci=1:length(zc)
+        if swapXandZ
+            wxy=warp(zc(zci)+0.*Xxy,Xxy,Yxy,rgb_image_XY(:,:,:,zci));
+        else
+            wxy=warp(Xxy,Yxy,zc(zci)+0.*Xxy,rgb_image_XY(:,:,:,zci));
+        end
+        wxy.FaceAlpha='texturemap'; wxy.AlphaDataMapping='none';
+        wxy.AlphaData=(Scl_Im_XY(:,:,zci)).^0.25;
+    end
+    xlabel('z (m)'); ylabel('x (m)'); zlabel('y (m)');
+    grid on
+    colormap jet
+    cbar=colorbar('FontName','Times New Roman');
+    cbar.Ticks=linspace(0,1,5);
+    cbar.TickLabels=split(num2str(round(linspace(mindB,maxdB,5))));
+    xlim([-1,1].*xylim);
+    ylim([-1,1].*xylim);
+    cbar.Title.String='(dB)';
+
+end
+
+%% Function - 2D Fourier Transform
+function E_r=f_spectral2space(E_k)
+    E_k_shift=fftshift(fftshift(E_k,2),1);
+    E_r_shift=fft2(E_k_shift);
+    E_r=fftshift(fftshift(E_r_shift,2),1);
+end
+
+%% Function - Building Scaled Colormap
+function [rgb_image,scaled_image]=cmap_scaled_rgb(map_str,Matrix_2D,minval,maxval)
+    map = colormap(map_str);
+    ncol = size(map,1);
+    scaled_image=(Matrix_2D-minval)/(maxval-minval);
+    indexed_image = round(1+(ncol-1)*scaled_image);
+    rgb_image = ind2rgb(indexed_image,map);
+end
+
+%% Function - Interpolation
+function [sxyq,Xq,Yq]=interp_amp_phase(sxy,xv,Nq,pad_len_meters)
+    [Xm,Ym]=ndgrid(xv,xv); 
+%     Rho_M=sqrt(Xm.^2+Ym.^2);
+%     sxy=sxy.*sinc(Rho_M./.15);
+    xqv=linspace(xv(1)-pad_len_meters,xv(end)+pad_len_meters,Nq);
+    [Xq,Yq]=ndgrid(xqv,xqv);
+    mag2_q=(interp2(Xm.',Ym.',abs(sxy).^2.',Xq.',Yq.','spline',0)).';
+    real_q=(interp2(Xm.',Ym.',cos(angle(sxy)).',Xq.',Yq.','spline',0)).';
+    imag_q=(interp2(Xm.',Ym.',sin(angle(sxy)).',Xq.',Yq.','spline',0)).';
+    phase_q=atan2(imag_q,real_q);
+    sxyq=sqrt(mag2_q).*exp(1j.*phase_q);
+end
+
+
